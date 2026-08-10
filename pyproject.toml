@@ -1,0 +1,26 @@
+[project]
+name = "seqviewer"
+version = "0.1.0"
+description = "Lightweight viewers for sequencing constructs: read pileups against a reference."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Micah Olivas", email = "mbolivas@stanford.edu" }]
+
+# The core (model + renderer) is deliberately dependency-free: it turns a grid
+# of (base, is_match) cells into a self-contained HTML page and nothing else.
+dependencies = []
+
+[project.optional-dependencies]
+# Reading an existing SAM/BAM into a pileup grid.
+sam = ["pysam>=0.20"]
+# Aligning raw reads first. Also needs minimap2 and samtools on PATH.
+align = ["pysam>=0.20"]
+dev = ["pytest>=7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/seqviewer"]
