@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 from typing import Iterable, List, NamedTuple, Optional, Sequence, Set
 
-from .model import Row
+from .grid import Row
 
 logger = logging.getLogger(__name__)
 
