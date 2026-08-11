@@ -16,6 +16,10 @@ import html as _html
 import json as _json
 from importlib import resources as _resources
 
+from .annotate import cell_width as _cell_width
+from .annotate import plan_track as _plan_track
+from .annotate import track_style as _track_style
+from .annotate import track_svg as _track_svg
 from .codon import translate as _translate
 from .pileup import PileupView
 
@@ -181,6 +185,10 @@ def render(view: PileupView) -> str:
 
     sections_html = []
     metas = []
+    # One plan per group: groups may have different reference lengths, so each
+    # gets its own layout and its own CSS prefix, keeping the per-feature rules
+    # from colliding between groups.
+    annot_plans = []
     for idx, g in enumerate(groups):
         star = ' <span class="sv-star" title="Highlighted">&#9733;</span>' \
             if g["is_recoverable"] else ""
@@ -306,6 +314,17 @@ def render(view: PileupView) -> str:
         ref_protein_js = _json.dumps(ref_protein) if ref_protein else "null"
         cons_protein_js = _json.dumps(cons_protein) if cons_protein else "null"
 
+        # The annotation track shares the pileup's scroll container, so it
+        # moves with the columns it describes.  cell_w comes from annotate
+        # rather than being recomputed in the JS, so a glyph cannot land off
+        # the column it names.
+        cell_w = _cell_width(ref_len)
+        annot_prefix = f"svf{idx}_"
+        annot_plan = _plan_track(view.features, ref_len, cell_w=cell_w)
+        annot_svg = _track_svg(annot_plan, prefix=annot_prefix)
+        annot_plans.append((annot_plan, annot_prefix))
+        annot_h = annot_plan.height + (5 if annot_plan.glyphs else 0)
+
         if n_rows == 0:
             pileup_block = (
                 f'<div class="pileup-empty">'
@@ -319,6 +338,7 @@ def render(view: PileupView) -> str:
                 f'<div class="pileup-labels" id="labels-{idx}"></div>'
                 f'<div class="pileup-scroll-wrap" id="wrap-{idx}">'
                 f'<div class="pileup-scroll" id="scroll-{idx}">'
+                f'{annot_svg}'
                 f'<canvas id="ruler-{idx}" class="pileup-ruler"></canvas>'
                 f'<canvas id="pileup-{idx}"></canvas>'
                 f'</div>'
@@ -334,7 +354,7 @@ def render(view: PileupView) -> str:
                 f'var refAA={ref_protein_js};'
                 f'var consAA={cons_protein_js};'
                 f'var flaggedCols={flagged_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols);'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h});'
                 f'}})();'
                 f'</script>'
             )
@@ -439,6 +459,15 @@ def render(view: PileupView) -> str:
     )
 
     # --- Palette emitted once, read by both the swatches and the canvas ----
+    # Feature fills come from the file the reference was read from, so they are
+    # literals rather than theme tokens and cannot be swapped by redefining a
+    # custom property.  That makes them per-page, so they stay in the shell
+    # rather than moving into the static stylesheet.
+    annot_css = "\n".join(
+        _track_style(plan, prefix=prefix) for plan, prefix in annot_plans
+        if plan.glyphs
+    )
+
     palette_css = "\n".join(
         [":root {"]
         + [f"    --{_p}-{k}: {v};" for k, v in _PALETTE["light"].items()]
@@ -457,6 +486,7 @@ def render(view: PileupView) -> str:
 <style id="{_style_id}">
 {palette_css}
 {pileup_css}
+{annot_css}
 </style>
 <script>
 /* The one palette, shared with the CSS custom properties above.  A swatch and

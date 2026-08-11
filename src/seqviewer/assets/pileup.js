@@ -1,11 +1,14 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
   if (!canvas) return;
   var nCols = refSeq.length;
   var nRows = rows.length;
-  var cellW = nCols < 200 ? 4 : nCols < 500 ? 3 : 2;
+  // Pixels per base is decided by annotate.cell_width and passed in, because
+  // the SVG feature track measures itself with the same number. Recomputing the
+  // rule here would let a glyph sit a pixel off the column it describes.
+  var cellW = cellWIn;
   var cellH = nRows < 100 ? 3 : nRows < 400 ? 2 : 1;
   var refH = Math.max(cellH, 6);
   var consH = refH;
@@ -142,6 +145,12 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var readsY = consY + consH + gap;
   if (labelsEl) {
     labelsEl.innerHTML = '';
+    if (annotH) {
+      var annotLabel = document.createElement('span');
+      annotLabel.textContent = 'Features';
+      annotLabel.style.height = annotH + 'px';
+      labelsEl.appendChild(annotLabel);
+    }
     var rulerSpacer = document.createElement('span');
     rulerSpacer.style.height = rulerH + 'px';
     labelsEl.appendChild(rulerSpacer);
@@ -299,11 +308,13 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       var leftArrow = document.createElement('div');
       leftArrow.className = 'pileup-mm-arrow pileup-mm-arrow-l';
       leftArrow.textContent = '◄';
+      leftArrow.style.top = (annotH || 0) + 'px';
       leftArrow.style.height = rulerH + 'px';
       wrapEl.appendChild(leftArrow);
       var rightArrow = document.createElement('div');
       rightArrow.className = 'pileup-mm-arrow pileup-mm-arrow-r';
       rightArrow.textContent = '►';
+      rightArrow.style.top = (annotH || 0) + 'px';
       rightArrow.style.height = rulerH + 'px';
       wrapEl.appendChild(rightArrow);
       function updateMmArrows() {

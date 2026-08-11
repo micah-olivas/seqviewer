@@ -266,3 +266,23 @@ html, body {
     margin-top: 1.5rem;
     margin-bottom: 1.5rem;
 }
+/* --- Annotation track ---
+   SVG rather than canvas: a few dozen outlined shapes with text in them want
+   real strokes, real text metrics and a tooltip, none of which canvas gives
+   cheaply.  It lives inside the pileup's scroll container so it travels with
+   the columns it describes.  The per-feature fills are emitted per page, from
+   the colours the reference file carried, so they are not here. */
+.sv-annot {
+    display: block;
+    margin-bottom: 5px;
+}
+.sv-annot path {
+    stroke-width: 1;
+}
+.sv-annot text {
+    font: 10px SF Mono, Menlo, Consolas, monospace;
+    pointer-events: none;
+}
+.sv-annot-out {
+    fill: var(--muted);
+}
