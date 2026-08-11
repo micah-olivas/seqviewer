@@ -272,10 +272,6 @@ def main(argv=None):
     view = PileupView(
         title=title, groups=[group], total_reads=len(reads),
         flanks=focus_flanks(reference, args.insert),
-        # top_fraction duplicates the single group's own fraction and the
-        # redesigned renderer no longer prints it.  Kept only because the
-        # current one does, and would otherwise report 0%.
-        top_fraction=len(rows) / len(reads),
     )
     print(f"flanks: {view.flanks}")
     out.write_text(render(view))

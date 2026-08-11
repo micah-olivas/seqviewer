@@ -58,7 +58,7 @@ group = PileupGroup(
     highlighted=True,
 )
 view = PileupView(title="Well A1", groups=[group], total_reads=100,
-                  top_fraction=0.65, flanks=(100, 100))
+                  flanks=(100, 100))
 Path("pileup.html").write_text(render(view))
 ```
 

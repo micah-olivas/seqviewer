@@ -59,22 +59,26 @@ class PileupView:
     whose groups have different reference lengths drop the annotations that do
     not apply rather than drawing them off the end.
 
-    ``flanks`` remains the focus region: the one feature whose edges are worth
-    dashed boundary lines through the full height of the pileup, and the window
-    the amino-acid track translates.  It is None when no feature was singled
-    out, and then the page draws neither — an annotated plasmid with no
-    designated insert gets its features and nothing else.
+    ``flanks`` remains the focus region: the one span whose edges are worth
+    dashed boundary lines through the full height of the pileup.  It is None
+    when no feature was singled out, and then the page draws no boundaries.
+
+    ``translate`` decides whether that region also gets amino-acid rows.  It is
+    a separate question from whether a focus region exists — a vector's payload
+    may be a span worth marking and not a reading frame worth translating — so
+    set it False for a construct where a protein readout would be meaningless.
+    Nothing is translated when there is no focus region to translate.
     """
 
     title: str
     groups: List[PileupGroup] = field(default_factory=list)
     total_reads: int = 0
-    top_fraction: float = 0.0
     highlight_ids: List[str] = field(default_factory=list)
     highlight_label: str = "Highlighted"
     flanks: Optional[Tuple[int, int]] = None
     features: List[Feature] = field(default_factory=list)
     ref_len: Optional[int] = None
+    translate: bool = True
     theme: Theme = field(default_factory=Theme)
 
     @classmethod

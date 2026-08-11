@@ -103,7 +103,6 @@ def build_view(seed: int = 42) -> PileupView:
         reference=reference,
         groups=groups,
         total_reads=100,
-        top_fraction=0.65,
         highlight_ids=["pUC19-WT"],
         highlight_label="Recoverable",
     )
