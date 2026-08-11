@@ -218,11 +218,17 @@ def main(argv=None):
     group = PileupGroup(name=reference.name, ref_seq=reference.seq, rows=rows,
                         n_reads=len(rows), fraction=len(rows) / len(reads))
     title = args.title or f"Pileup: {reference.name}"
+    # Built directly rather than through PileupView.from_reference so that the
+    # focus region comes from --insert by label, rather than from a feature the
+    # file happens to have typed "insert".  Everything else from_reference would
+    # carry across still has to be carried.
     view = PileupView(
         title=title, groups=[group], total_reads=len(reads),
         flanks=focus_flanks(reference, args.insert),
+        features=reference.features,
+        ref_len=len(reference),
     )
-    print(f"flanks: {view.flanks}")
+    print(f"flanks: {view.flanks} | {len(view.features)} features drawn")
     out.write_text(render(view))
     print(f"Wrote {out.resolve()}")
     return 0
