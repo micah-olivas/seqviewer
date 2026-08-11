@@ -475,6 +475,11 @@ class SummaryView:
     focus: Optional[Tuple[int, int]] = None
     features: List[Feature] = field(default_factory=list)
     theme: Theme = field(default_factory=Theme)
+    #: The view this was reduced from, when there was one.  A reference to it, not
+    #: a copy — kept because base-resolution detail needs the reads themselves,
+    #: which a reduction deliberately does not carry.  None when a summary was
+    #: assembled directly, and then a page draws no such detail.
+    source: Optional[PileupView] = None
 
     @property
     def ref_len(self) -> int:
@@ -543,4 +548,5 @@ class SummaryView:
             focus=focus,
             features=list(view.features),
             theme=view.theme,
+            source=view,
         )

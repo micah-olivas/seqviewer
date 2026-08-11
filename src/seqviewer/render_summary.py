@@ -25,7 +25,8 @@ import html as _html
 from typing import List, Optional, Sequence, Tuple
 
 from .annotate import plan_track, track_style, track_svg
-from .summary import GroupSummary, SummaryView, Variant
+from .summary import SEVERITY, GroupSummary, SummaryView, Variant
+from .zoom import window_bounds, window_css, window_svg
 
 # The pileup owns the package's colour table.  Imported rather than copied so
 # the two views cannot drift apart; if it moves, this fails loudly at import
@@ -39,10 +40,19 @@ __all__ = ["render_summary"]
 #: responsive without measuring anything in the browser.
 WIDTH = 1000.0
 
+#: Narrowest the drawing is allowed to be scaled to before its container scrolls
+#: instead.  A viewBox scales type along with geometry, so without a floor a
+#: narrow window shrinks the whole band into illegibility.
+MIN_DRAW_WIDTH = 680
+
 RULER_H = 18
 LOLLI_H = 64
 RIBBON_H = 11
 DEPTH_H = 30
+
+#: Separation between the reference ribbon and the coverage profile, so a group
+#: at full depth does not read as one thick bar.
+RIBBON_GAP = 3
 
 #: Lollipop head radius, and the stem lengths a 0% and a 100% allele get.
 HEAD_R = 5.0
@@ -57,6 +67,13 @@ MAX_TIERS = 3
 
 #: Rows of the variant table drawn before it is cut short.
 MAX_TABLE_ROWS = 50
+
+#: Base-resolution windows drawn per group, and their size.  Bounded because each
+#: window is one SVG text element per base per row: a window is cheap, forty are
+#: not, and a summary that carries forty has stopped summarising.
+MAX_INSPECTORS = 6
+INSPECTOR_COLUMNS = 60
+INSPECTOR_READS = 6
 
 #: Consequence -> the tier its glyph and chip are drawn in.
 _TIER_OF = {
@@ -235,14 +252,14 @@ def _head(variant: Variant, x: float, y: float, tier_class: str) -> str:
             f'r="{HEAD_R:.1f}" />')
 
 
-def _lollipop_parts(group: GroupSummary, cell_w: float) -> List[str]:
-    """One stem-and-head per called variant, rising from the ribbon."""
+def _lollipop_parts(group: GroupSummary, cell_w: float, baseline: float) -> List[str]:
+    """One stem-and-head per called variant, rising from the ribbon at *baseline*."""
     parts: List[str] = []
     tiers = _tiers(group.variants, cell_w)
     for variant, tier in zip(group.variants, tiers):
         x = _x(variant.pos + 0.5, cell_w)
         stem = STEM_MIN + STEM_SPAN * min(1.0, variant.fraction) + TIER_RISE * tier
-        top = LOLLI_H - stem
+        top = baseline - stem
         tier_class = f"sv-{_TIER_OF.get(variant.consequence, 'neutral')}"
         title = (
             f"{variant.label} at {variant.pos + 1}\n"
@@ -252,14 +269,17 @@ def _lollipop_parts(group: GroupSummary, cell_w: float) -> List[str]:
         parts.append("<g>")
         parts.append(f"<title>{_e(title)}</title>")
         parts.append(
-            f'<line class="sv-stem" x1="{x:.1f}" y1="{LOLLI_H}" '
+            f'<line class="sv-stem" x1="{x:.1f}" y1="{baseline:.1f}" '
             f'x2="{x:.1f}" y2="{top:.1f}" />'
         )
         parts.append(_head(variant, x, top, tier_class))
         if variant.kind == "snv":
             parts.append(
+                # dy in ems rather than dominant-baseline: the latter was
+                # unsupported in WebKit for years, and the engines still
+                # disagree about "central" versus "middle".
                 f'<text class="sv-head-letter" x="{x:.1f}" y="{top:.1f}" '
-                f'text-anchor="middle" dominant-baseline="central">'
+                f'dy="0.35em" text-anchor="middle">'
                 f"{_e(variant.alt)}</text>"
             )
         parts.append("</g>")
@@ -267,9 +287,8 @@ def _lollipop_parts(group: GroupSummary, cell_w: float) -> List[str]:
 
 
 def _ribbon_parts(group: GroupSummary, view: SummaryView,
-                  cell_w: float) -> List[str]:
+                  cell_w: float, y: float) -> List[str]:
     """The reference bar, with the reading frame picked out along it."""
-    y = LOLLI_H
     width = _x(group.ref_len, cell_w)
     parts = [
         f'<rect class="sv-ribbon" x="0" y="{y}" width="{width:.1f}" '
@@ -292,7 +311,8 @@ def _ribbon_parts(group: GroupSummary, view: SummaryView,
     return parts
 
 
-def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int) -> List[str]:
+def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int,
+                 top: float) -> List[str]:
     """A filled coverage profile under the ribbon.
 
     Each pixel column reports the *thinnest* coverage it spans, not the mean, so
@@ -302,7 +322,6 @@ def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int) -> List[str]:
     """
     if not group.depth or not ceiling:
         return []
-    top = LOLLI_H + RIBBON_H
     base = top + DEPTH_H
     columns = min(int(WIDTH), group.ref_len)
     points = []
@@ -324,16 +343,27 @@ def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int) -> List[str]:
 
 def _band_svg(group: GroupSummary, view: SummaryView, cell_w: float,
               ceiling: int) -> str:
-    """One group's whole band as an ``<svg>`` element."""
-    height = LOLLI_H + RIBBON_H + DEPTH_H
+    """One group's whole band as an ``<svg>`` element.
+
+    A group with nothing called reserves no room for lollipops.  Keeping the
+    height uniform would line the ribbons up, but it spends sixty pixels per
+    clean group on empty space and leaves the frame's boundary lines hanging in
+    it, which reads as a drawing that failed rather than a clone that passed.
+    """
+    lolli_h = LOLLI_H if group.variants else 0.0
+    ribbon_y = lolli_h
+    depth_y = ribbon_y + RIBBON_H + RIBBON_GAP
+    height = depth_y + DEPTH_H
+
     parts = [
-        f'<svg class="sv-band" viewBox="0 0 {WIDTH:.0f} {height}" '
-        f'width="{WIDTH:.0f}" height="{height}" role="img" '
+        f'<svg class="sv-band" viewBox="0 0 {WIDTH:.0f} {height:.0f}" '
+        f'width="{WIDTH:.0f}" height="{height:.0f}" role="img" '
         f'aria-label="{_e(group.name)} summary">'
     ]
-    parts += _depth_parts(group, cell_w, ceiling)
-    parts += _ribbon_parts(group, view, cell_w)
-    parts += _lollipop_parts(group, cell_w)
+    parts += _depth_parts(group, cell_w, ceiling, depth_y)
+    parts += _ribbon_parts(group, view, cell_w, ribbon_y)
+    if group.variants:
+        parts += _lollipop_parts(group, cell_w, lolli_h)
     parts += _focus_parts(view.focus, cell_w, height)
     parts.append("</svg>")
     return "".join(parts)
@@ -418,11 +448,71 @@ def _table(group: GroupSummary) -> str:
     )
 
 
+def _inspectors(group: GroupSummary, view: SummaryView, index: int) -> str:
+    """A base-resolution window per called variant, each collapsed until asked for.
+
+    The map answers "where" and the table answers "what"; this answers "show me
+    the actual bases", which is the one question neither can. Windows are
+    ``<details>`` rather than JavaScript-driven panels: a summary should stay
+    readable with nothing running, and a disclosure widget is the one interaction
+    both engines implement identically.
+    """
+    source = view.source
+    if source is None or not group.variants or index >= len(source.groups):
+        return ""
+
+    origin = source.groups[index]
+    if not origin.rows:
+        return ""
+
+    ranked = sorted(
+        group.variants,
+        key=lambda v: (SEVERITY.index(v.consequence)
+                       if v.consequence in SEVERITY else len(SEVERITY),
+                       -v.fraction),
+    )
+
+    blocks = []
+    for variant in ranked[:MAX_INSPECTORS]:
+        start, end = window_bounds(variant.pos, len(origin.ref_seq),
+                                   INSPECTOR_COLUMNS)
+        window = window_svg(
+            origin.ref_seq, origin.rows, start, end,
+            frame=view.focus, max_read_rows=INSPECTOR_READS,
+            label=f"{variant.label} at {variant.pos + 1}",
+        )
+        if not window.svg:
+            continue
+        hidden = ""
+        if window.rows_hidden:
+            hidden = (
+                f'<p class="sv-none">{window.rows_shown} of '
+                f"{window.rows_shown + window.rows_hidden} reads shown, those "
+                f"disagreeing here first.</p>"
+            )
+        caption = (
+            f"{variant.label} at {variant.pos + 1}"
+            + (f" &middot; {_e(variant.effect)}" if variant.effect else "")
+        )
+        blocks.append(
+            "<details class=\"sv-zoom\"><summary>"
+            f"{caption} &middot; bases {start + 1}&ndash;{end}"
+            "</summary>"
+            f'<div class="sv-zoom-body">{window.svg}{hidden}</div>'
+            "</details>"
+        )
+
+    if not blocks:
+        return ""
+    return f'<div class="sv-zooms">{"".join(blocks)}</div>'
+
+
 # --------------------------------------------------------------------------
 # The page shell
 # --------------------------------------------------------------------------
 
-def _shell(view: SummaryView, palette: dict, body: str, track_css: str) -> str:
+def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
+           window_style: str) -> str:
     """Wrap *body* in a complete, self-contained document.
 
     THE SEAM.  Everything specific to being an HTML page rather than a drawing
@@ -515,7 +605,13 @@ h1 {{ font-size: 1.3rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }}
    width the page gives it, crisp either way. */
 svg.sv-band, svg.sv-map, svg.sv-annot {{
     display: block; width: 100%; height: auto; overflow: visible;
+    /* A viewBox scales the type along with the drawing, so past a point the
+       whole thing shrinks into illegibility. Below this the drawing keeps its
+       size and its container scrolls instead — measured: at a 420px viewport an
+       unfloored annotation track renders 6px tall. */
+    min-width: {MIN_DRAW_WIDTH}px;
 }}
+.sv-scroll {{ overflow-x: auto; overflow-y: visible; }}
 .sv-annot text {{ font: 10px var(--mono); }}
 .sv-annot-out {{ fill: var(--muted); }}
 .sv-annot path {{ stroke-width: 1; }}
@@ -570,6 +666,34 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
 }}
 .sv-kitem {{ display: flex; align-items: center; gap: 0.3rem; }}
 .sv-sep {{ border: none; border-top: 1px solid var(--panel-line); margin: 1.3rem 0; }}
+/* --- base-resolution windows --- */
+.sv-zooms {{ margin-top: 0.6rem; }}
+.sv-zoom {{
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    margin-bottom: 0.3rem;
+    background: var(--card-bg);
+}}
+.sv-zoom > summary {{
+    cursor: pointer;
+    padding: 0.3rem 0.5rem;
+    font: 600 0.75rem/1.3 var(--mono);
+    color: var(--text);
+    /* Safari shows a default disclosure marker that ignores list-style; both
+       engines honour ::-webkit-details-marker, so it is set for both. */
+    list-style: none;
+}}
+.sv-zoom > summary::-webkit-details-marker {{ display: none; }}
+.sv-zoom > summary::before {{
+    content: "\\25B8 ";
+    color: var(--muted);
+}}
+.sv-zoom[open] > summary::before {{ content: "\\25BE "; }}
+.sv-zoom-body {{
+    padding: 0.2rem 0.5rem 0.5rem;
+    overflow-x: auto;
+}}
+{window_style}
 {track_css}
 </style>
 </head>
@@ -671,7 +795,8 @@ def render_summary(view: SummaryView, max_lanes: int = 2) -> str:
         f"{highlighted}</div>"
         f'<div class="sv-panel">'
         f'<div class="sv-eyebrow">Reference</div>'
-        f'{"".join(map_parts)}{annotations}{dropped}'
+        f'<div class="sv-scroll">{"".join(map_parts)}{annotations}</div>'
+        f"{dropped}"
         f"</div>"
     )
 
@@ -679,7 +804,7 @@ def render_summary(view: SummaryView, max_lanes: int = 2) -> str:
     ceiling = max((g.max_depth for g in view.groups), default=0)
 
     sections = []
-    for group in view.groups:
+    for index, group in enumerate(view.groups):
         star = ' <span class="sv-star" title="Highlighted">&#9733;</span>' \
             if group.highlighted else ""
         status = (
@@ -691,12 +816,15 @@ def render_summary(view: SummaryView, max_lanes: int = 2) -> str:
             f'<div class="sv-group-head"><span class="sv-name">'
             f"{_e(group.name)}{star}</span>{_chip(group)}{status}</div>"
             f'<div class="sv-facts">{_facts(group, view)}</div>'
-            f"{_band_svg(group, view, cell_w, ceiling)}"
+            f'<div class="sv-scroll">'
+            f"{_band_svg(group, view, cell_w, ceiling)}</div>"
             f"{_table(group)}"
+            f"{_inspectors(group, view, index)}"
             "</div>"
         )
 
     body = head + _key() + '<hr class="sv-sep">' + \
         '<hr class="sv-sep">'.join(sections)
 
-    return _shell(view, palette, body, track_style(plan))
+    return _shell(view, palette, body, track_style(plan),
+                  window_css(token_prefix=view.theme.css_prefix))
