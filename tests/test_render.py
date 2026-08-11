@@ -246,6 +246,40 @@ def test_translation_track_is_drawn_only_when_an_insert_is_known():
     assert "var refAA=null;" not in with_flanks
 
 
+def test_translation_is_suppressed_when_the_view_asks_for_none():
+    """A focus region worth marking is not always a reading frame worth
+    translating — a vector's payload can be one without being the other — so the
+    protein readout is its own flag rather than a consequence of `flanks`.
+    """
+    html = render(_view(flanks=(10, 10), translate=False))
+    assert "var refAA=null;" in html
+    assert "var consAA=null;" in html
+    # The focus region still gets its boundary lines.
+    assert "var flanks=[10,10];" in html
+
+
+def test_translation_is_drawn_by_default_when_a_focus_region_exists():
+    html = render(_view(flanks=(10, 10)))
+    assert "var refAA=null;" not in html
+
+
+def test_asking_for_a_translation_without_a_focus_region_draws_none():
+    """There is nowhere to place amino-acid rows without a region to translate."""
+    html = render(_view(translate=True))
+    assert "var refAA=null;" in html
+
+
+def test_the_translation_flag_does_not_disturb_the_reads():
+    """Guards the refactor: the consensus reconstruction moved inside the flag."""
+    ref = "ACGT" * 25
+    rows = [[(b, True) for b in ref]]
+    on = render(_view(groups=[PileupGroup("g", ref, rows)], flanks=(10, 10)))
+    off = render(_view(groups=[PileupGroup("g", ref, rows)], flanks=(10, 10),
+                       translate=False))
+    assert '"' + "." * 100 + '"' in on
+    assert '"' + "." * 100 + '"' in off
+
+
 def test_reads_are_encoded_compactly():
     """Matches collapse to '.', so the payload stays small on wide references."""
     ref = "ACGT" * 25

@@ -141,6 +141,7 @@ def render(view: PileupView) -> str:
         flanks_js = f"[{flank_lengths[0]},{flank_lengths[1]}]"
 
     single = len(groups) == 1
+    translate = view.translate
     has_flanks = bool(flank_lengths and (flank_lengths[0] or flank_lengths[1]))
     any_flags = False
     any_starred = any(g["is_recoverable"] for g in groups)
@@ -254,18 +255,19 @@ def render(view: PileupView) -> str:
         consensus_str = "".join(consensus_encoded)
         any_flags = any_flags or bool(flagged_cols)
 
-        # Reconstruct actual consensus DNA and translate the insert region
-        consensus_dna = "".join(
-            ref_seq[i] if c == "." else (c if c != "-" else "N")
-            for i, c in enumerate(consensus_encoded)
-        )
-        _ins_start = flank_lengths[0] if flank_lengths else 0
-        _ins_end = ref_len - (flank_lengths[1] if flank_lengths else 0)
-        insert_dna = consensus_dna[_ins_start:_ins_end]
-        ref_insert_dna = ref_seq[_ins_start:_ins_end]
-
-        cons_protein = _translate(insert_dna)
-        ref_protein = _translate(ref_insert_dna)
+        # Translate the focus region, when the view asks for a protein readout.
+        # A focus region worth marking is not always a reading frame worth
+        # translating, so this is gated on `translate` and not on `flanks`.
+        cons_protein = ref_protein = ""
+        if translate and has_flanks:
+            consensus_dna = "".join(
+                ref_seq[i] if c == "." else (c if c != "-" else "N")
+                for i, c in enumerate(consensus_encoded)
+            )
+            _ins_start = flank_lengths[0]
+            _ins_end = ref_len - flank_lengths[1]
+            cons_protein = _translate(consensus_dna[_ins_start:_ins_end])
+            ref_protein = _translate(ref_seq[_ins_start:_ins_end])
 
         ref_seq_js = _json.dumps(ref_seq)
         rows_js = _json.dumps(rows_encoded)
