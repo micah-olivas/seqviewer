@@ -8,7 +8,7 @@ import re
 from seqviewer.annotate import (
     LANE_GAP, LANE_HEIGHT, cell_width, plan_track, track_style, track_svg,
 )
-from seqviewer.model import Feature
+from seqviewer.construct import Feature
 
 
 def _f(start, end, **kw):

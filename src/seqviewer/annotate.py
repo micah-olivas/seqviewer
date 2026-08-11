@@ -17,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from .construct import Feature
 from .genbank import feature_spans
-from .model import Feature
 
 __all__ = [
     "cell_width", "plan_track", "track_svg", "track_style", "TrackPlan", "Glyph",
