@@ -1,0 +1,268 @@
+:root {
+    --__PREFIX__-bg: #fafafa;
+    --text: #1e293b;
+    --muted: #94a3b8;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+    --panel-line: #dfe3e8;
+    --ok: #0f7a52;
+    --ok-bg: #e8f6ef;
+    --warn: #a1650a;
+    --warn-bg: #fdf3e2;
+    --bad: #c22f2f;
+    --bad-bg: #fdecec;
+    --neutral: #5b6672;
+    --neutral-bg: #eef1f4;
+    /* One gutter width, used by the plot's row labels and by the indent on
+       every text block, so text and plot share a single left edge. */
+    --gutter: 2.5rem;
+    --gutter-gap: 4px;
+    --mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}
+[data-theme="dark"] {
+    --__PREFIX__-bg: #1a1a2e;
+    --text: #e0e0e0;
+    --muted: #64748b;
+    --card-bg: #16213e;
+    --border: #334155;
+    --panel-line: #2c3a55;
+    --ok: #35c493;
+    --ok-bg: #14312a;
+    --warn: #e0a355;
+    --warn-bg: #33280f;
+    --bad: #f0655f;
+    --bad-bg: #35191c;
+    --neutral: #93a1b0;
+    --neutral-bg: #202b45;
+}
+html, body {
+    background: var(--__PREFIX__-bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+    padding: 1.5rem;
+}
+/* Every text block is indented by the plot's label gutter, so prose and
+   pileup share one left edge instead of the two the old negative margin left. */
+.sv-panel, .sv-group-head, .group-sep, .pileup-empty {
+    margin-left: calc(var(--gutter) + var(--gutter-gap));
+}
+/* --- Masthead --- */
+.sv-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.75rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 1.1rem;
+}
+.sv-panel-id {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+.sv-eyebrow {
+    font: 600 0.66rem/1 var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.sv-idline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+.sv-name {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.sv-star {
+    color: var(--warn);
+    cursor: help;
+}
+.sv-facts {
+    font: 0.78rem/1.55 var(--mono);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+.sv-facts b {
+    color: var(--text);
+    font-weight: 600;
+}
+.sv-highlight {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+/* --- Verdict chip: hue, word, and glyph, so colour is never the only cue --- */
+.sv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.28rem 0.45rem;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+}
+.sv-glyph {
+    font-family: var(--mono);
+    font-size: 0.85em;
+}
+.sv-chip-ok { color: var(--ok); background: var(--ok-bg); }
+.sv-chip-warn { color: var(--warn); background: var(--warn-bg); }
+.sv-chip-bad { color: var(--bad); background: var(--bad-bg); }
+.sv-chip-neutral { color: var(--neutral); background: var(--neutral-bg); }
+.sv-glyph-ok { color: var(--ok); }
+.sv-glyph-warn { color: var(--warn); }
+.sv-glyph-bad { color: var(--bad); }
+.sv-glyph-neutral { color: var(--neutral); }
+/* --- Key: grouped by what the mark means --- */
+.sv-key {
+    display: flex;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+.sv-kgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.sv-klabel {
+    font: 600 0.6rem/1 var(--mono);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.sv-krow {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.sv-kitem {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    color: var(--text);
+    white-space: nowrap;
+}
+.sv-sw {
+    width: 10px;
+    height: 10px;
+    border-radius: 1px;
+    border: 1px solid transparent;
+    display: inline-block;
+    flex: none;
+}
+.sv-sw-tri {
+    width: 0;
+    height: 0;
+    border-radius: 0;
+    border: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--__PREFIX__-flag);
+}
+.sv-sw-dash {
+    width: 0;
+    height: 11px;
+    border-radius: 0;
+    border: none;
+    border-left: 2px dashed var(--__PREFIX__-boundary);
+}
+/* --- Per-group header, shown only when there is more than one group --- */
+.sv-group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    /* Longhand: a `margin` shorthand here would reset the gutter indent. */
+    margin-top: 1.25rem;
+    margin-bottom: 0.45rem;
+}
+.sv-group-name {
+    font-weight: 700;
+    font-size: 1rem;
+}
+.pileup-container {
+    margin-bottom: 0.5rem;
+}
+.pileup-outer {
+    display: flex;
+    align-items: stretch;
+}
+.pileup-scroll-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+.pileup-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+}
+.pileup-scroll::-webkit-scrollbar {
+    display: none;
+}
+.pileup-mm-arrow {
+    position: absolute;
+    top: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    font-size: 16px;
+    pointer-events: none;
+    z-index: 2;
+    color: var(--text);
+}
+.pileup-mm-arrow-l { left: 0; background: linear-gradient(to right, var(--__PREFIX__-bg) 40%, transparent); }
+.pileup-mm-arrow-r { right: 0; background: linear-gradient(to left, var(--__PREFIX__-bg) 40%, transparent); }
+.pileup-scroll canvas {
+    display: block;
+}
+.pileup-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    width: var(--gutter);
+    padding-right: var(--gutter-gap);
+    font: 9px/1 SF Mono, Menlo, Consolas, monospace;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+}
+.pileup-labels span {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+.pileup-empty {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-style: italic;
+    padding: 1rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.group-sep {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+}
