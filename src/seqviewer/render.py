@@ -179,6 +179,13 @@ def render(view: PileupView) -> str:
     ref_lens = {len(g["ref_seq"]) for g in groups}
     hoist_geometry = not single and len(ref_lens) == 1
 
+    # A fact states its number tersely and says what the number *is* on hover.
+    # The tip defines the quantity and never restates the value: the line is
+    # still the only place each fact is stated, and a tip cannot drift from a
+    # number it does not contain.
+    def _fact(text: str, tip: str) -> str:
+        return f'<span class="sv-fact" title="{_html.escape(tip)}">{text}</span>'
+
     sections_html = []
     metas = []
     for idx, g in enumerate(groups):
@@ -203,22 +210,49 @@ def render(view: PileupView) -> str:
         # Each number appears once: the reads figure is a ratio rather than a
         # count and a separate percentage, and "drawn" shows up only when it
         # differs from the assigned count.
-        geometry = [f"<b>{ref_len}</b> bp"]
+        geometry = [_fact(
+            f"<b>{ref_len}</b> bp reference",
+            "Length of the reference these reads are aligned to.",
+        )]
         if has_flanks:
-            geometry.append(
+            geometry.append(_fact(
                 f"insert <b>{flank_lengths[0] + 1}</b>&ndash;"
-                f"<b>{ref_len - flank_lengths[1]}</b>"
-            )
+                f"<b>{ref_len - flank_lengths[1]}</b>",
+                "Where the insert starts and ends in reference coordinates, "
+                "counting from base 1 and including both ends. These are "
+                "positions, not a count of bases. The flanks outside them are "
+                "vector.",
+            ))
 
         counts = []
         if g["n_reads"] and view.total_reads:
-            counts.append(f"<b>{g['n_reads']}</b> of <b>{view.total_reads}</b> reads")
+            counts.append(_fact(
+                f"<b>{g['n_reads']}</b> of <b>{view.total_reads}</b> reads",
+                "Reads assigned to this group, out of the page's total across "
+                "all groups.",
+            ))
         elif g["n_reads"]:
-            counts.append(f"<b>{g['n_reads']}</b> reads")
+            counts.append(_fact(
+                f"<b>{g['n_reads']}</b> reads",
+                "Reads assigned to this group.",
+            ))
         if drawn != g["n_reads"]:
-            counts.append(f"<b>{drawn}</b> drawn")
+            # Why this differs from the assigned count is the caller's business
+            # — the grid arrives already built — so the tip names the quantity
+            # without inventing a reason for the gap.
+            counts.append(_fact(
+                f"<b>{drawn}</b> rows drawn",
+                "How many of this group's reads are plotted as rows below. "
+                "Shown only when it differs from the number assigned.",
+            ))
         if identity is not None:
-            counts.append(f"<b>{identity:.1%}</b> identity")
+            counts.append(_fact(
+                f"<b>{identity:.1%}</b> identity",
+                "Share of the bases the drawn reads actually called that match "
+                "the reference. Gaps and uncovered positions count for neither "
+                "side, so a read spanning half the reference with no mismatches "
+                "is 100%.",
+            ))
 
         facts = counts if hoist_geometry else geometry + counts
 
@@ -374,8 +408,15 @@ def render(view: PileupView) -> str:
         head_facts = " &middot; ".join(
             bit for bit in (
                 metas[0]["geometry"] if hoist_geometry else "",
-                f"<b>{view.total_reads}</b> reads" if view.total_reads else "",
-                f"<b>{len(groups)}</b> groups",
+                _fact(
+                    f"<b>{view.total_reads}</b> reads",
+                    "Reads across every group on this page.",
+                ) if view.total_reads else "",
+                _fact(
+                    f"<b>{len(groups)}</b> groups",
+                    "Subpopulations the reads were split into; each gets its "
+                    "own header and pileup below.",
+                ),
                 rollup,
             ) if bit
         )
