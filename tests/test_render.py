@@ -320,4 +320,6 @@ def test_renderer_needs_no_third_party_imports():
             roots.update(a.name.split(".")[0] for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             roots.add(node.module.split(".")[0])
-    assert roots <= {"html", "json", "collections", "__future__"}, roots
+    # importlib is stdlib: the renderer reads its CSS and JS out of the
+    # package's assets directory with importlib.resources.
+    assert roots <= {"html", "json", "collections", "importlib", "__future__"}, roots
