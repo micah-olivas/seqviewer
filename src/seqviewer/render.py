@@ -21,6 +21,95 @@ from .model import PileupView
 __all__ = ["render"]
 
 
+#: Every colour the page draws, per theme.  The legend swatches read these as
+#: CSS custom properties and the canvas reads the same values from an emitted
+#: JS object, so a swatch can no longer disagree with the cell it describes.
+_PALETTE = {
+    "light": {
+        "match": "#c8ccd0",
+        "vector": "#dfe2e6",
+        "gap": "#ffffff",
+        "ref": "#1e293b",
+        "a": "#e03131",
+        "t": "#1971c2",
+        "c": "#e8590c",
+        "g": "#e67700",
+        "boundary": "#d97706",
+        "tick": "#94a3b8",
+        "tick-label": "#1e293b",
+        "flag": "#94a3b8",
+        "aa-match": "#d1d5db",
+        "aa-diff": "#e03131",
+        "aa-diff-bg": "rgba(224,49,49,0.10)",
+        "aa-bg": "#f8fafc",
+        "aa-grid": "#e5e7eb",
+    },
+    "dark": {
+        "match": "#4a5568",
+        "vector": "#3a4455",
+        "gap": "#ffffff",
+        "ref": "#e0e0e0",
+        "a": "#ff6b6b",
+        "t": "#339af0",
+        "c": "#ffa94d",
+        "g": "#ffd43b",
+        "boundary": "#f59e0b",
+        "tick": "#64748b",
+        "tick-label": "#e0e0e0",
+        "flag": "#64748b",
+        "aa-match": "#4a5568",
+        "aa-diff": "#ff6b6b",
+        "aa-diff-bg": "rgba(255,107,107,0.18)",
+        "aa-bg": "#1e293b",
+        "aa-grid": "#334155",
+    },
+}
+
+#: Substrings matched against a group's ``status``, in order, to pick the tier
+#: it is drawn in.  "mismatch" precedes "match" so the longer word wins.
+_TIERS = (
+    ("perfect", "ok", "●"),
+    ("silent", "warn", "◐"),
+    ("missense", "bad", "▲"),
+    ("nonsense", "bad", "▲"),
+    ("frameshift", "bad", "▲"),
+    ("stop", "bad", "▲"),
+    ("mismatch", "bad", "▲"),
+    ("match", "ok", "●"),
+)
+
+
+def _verdict(status: str, highlighted: bool):
+    """Classify *status* into a ``(tier, glyph)`` pair, or None to show nothing.
+
+    A blank status means the caller has no call to report, and renders no chip
+    at all rather than an empty one.  A status the renderer has no opinion about
+    gets the neutral tier: reporting something unrecognised should not paint a
+    group as a failure, which is what the previous fall-through to the error
+    colour did.
+    """
+    text = status.strip().lower()
+    if not text:
+        return None
+    for needle, tier, glyph in _TIERS:
+        if needle in text:
+            return tier, glyph
+    return ("ok", "●") if highlighted else ("neutral", "○")
+
+
+def _chip(status: str, highlighted: bool) -> str:
+    """Render *status* as a verdict chip, or "" when there is nothing to say."""
+    verdict = _verdict(status, highlighted)
+    if verdict is None:
+        return ""
+    tier, glyph = verdict
+    return (
+        f'<span class="sv-chip sv-chip-{tier}">'
+        f'<span class="sv-glyph">{glyph}</span>'
+        f'{_html.escape(status)}</span>'
+    )
+
+
 def render(view: PileupView) -> str:
     """Render *view* to a complete HTML document and return it as a string."""
     # The body below predates the typed model and reads its groups as plain
@@ -51,18 +140,25 @@ def render(view: PileupView) -> str:
     if flank_lengths and (flank_lengths[0] or flank_lengths[1]):
         flanks_js = f"[{flank_lengths[0]},{flank_lengths[1]}]"
 
-    sections_html = []
-    for idx, g in enumerate(groups):
-        star = " &#9733;" if g["is_recoverable"] else ""
-        if g["status"] == "Silent Mutation":
-            status_class = "status-silent"
-        elif g["is_recoverable"]:
-            status_class = "status-correct"
-        else:
-            status_class = "status-other"
+    single = len(groups) == 1
+    has_flanks = bool(flank_lengths and (flank_lengths[0] or flank_lengths[1]))
+    any_flags = False
+    any_starred = any(g["is_recoverable"] for g in groups)
 
-        # Compute per-read identity from pileup data
-        identity_str = ""
+    # The reference's geometry belongs to the run, not to a group, so with
+    # several groups over one reference it is stated once in the masthead
+    # instead of repeated in every group header.
+    ref_lens = {len(g["ref_seq"]) for g in groups}
+    hoist_geometry = not single and len(ref_lens) == 1
+
+    sections_html = []
+    metas = []
+    for idx, g in enumerate(groups):
+        star = ' <span class="sv-star" title="Highlighted">&#9733;</span>' \
+            if g["is_recoverable"] else ""
+
+        # Per-read identity across every called base in the group.
+        identity = None
         if g["pileup_rows"]:
             total_bases = 0
             total_matches = 0
@@ -72,20 +168,45 @@ def render(view: PileupView) -> str:
                 total_matches += sum(1 for _, m in aligned if m)
             if total_bases > 0:
                 identity = total_matches / total_bases
-                identity_str = f" &middot; Read identity: {identity:.1%}"
 
         ref_len = len(g["ref_seq"])
+        drawn = len(g["pileup_rows"])
 
-        header = (
-            f'<div class="group-header">'
-            f'<span class="ref-name">{_html.escape(g["ref_id"])}{star}</span>'
-            f'<span class="group-meta">'
-            f'{g["n_reads"]} reads ({g["frac"]:.0%}) &middot; '
-            f'{ref_len} bp &middot; '
-            f'Consensus: <span class="{status_class}">'
-            f'{_html.escape(g["status"])}</span>'
-            f'{identity_str}'
-            f'</span></div>'
+        # Each number appears once: the reads figure is a ratio rather than a
+        # count and a separate percentage, and "drawn" shows up only when it
+        # differs from the assigned count.
+        geometry = [f"<b>{ref_len}</b> bp"]
+        if has_flanks:
+            geometry.append(
+                f"insert <b>{flank_lengths[0] + 1}</b>&ndash;"
+                f"<b>{ref_len - flank_lengths[1]}</b>"
+            )
+
+        counts = []
+        if g["n_reads"] and view.total_reads:
+            counts.append(f"<b>{g['n_reads']}</b> of <b>{view.total_reads}</b> reads")
+        elif g["n_reads"]:
+            counts.append(f"<b>{g['n_reads']}</b> reads")
+        if drawn != g["n_reads"]:
+            counts.append(f"<b>{drawn}</b> drawn")
+        if identity is not None:
+            counts.append(f"<b>{identity:.1%}</b> identity")
+
+        facts = counts if hoist_geometry else geometry + counts
+
+        metas.append({
+            "name_html": f'{_html.escape(g["ref_id"])}{star}',
+            "chip": _chip(g["status"], g["is_recoverable"]),
+            "facts": " &middot; ".join(facts),
+            "geometry": " &middot; ".join(geometry),
+        })
+
+        header = "" if single else (
+            f'<div class="sv-group-head">'
+            f'<span class="sv-group-name">{metas[-1]["name_html"]}</span>'
+            f'{metas[-1]["chip"]}'
+            f'<span class="sv-facts">{metas[-1]["facts"]}</span>'
+            f'</div>'
         )
 
         # Encode pileup data compactly for JS:
@@ -131,6 +252,7 @@ def render(view: PileupView) -> str:
             else:
                 consensus_encoded.append("-")
         consensus_str = "".join(consensus_encoded)
+        any_flags = any_flags or bool(flagged_cols)
 
         # Reconstruct actual consensus DNA and translate the insert region
         consensus_dna = "".join(
@@ -150,7 +272,6 @@ def render(view: PileupView) -> str:
         cons_js = _json.dumps(consensus_str)
         flagged_js = _json.dumps(flagged_cols)
         n_rows = len(rows_encoded)
-        n_cols = ref_len
 
         # Translation data for canvas rendering
         ref_protein_js = _json.dumps(ref_protein) if ref_protein else "null"
@@ -174,8 +295,6 @@ def render(view: PileupView) -> str:
                 f'</div>'
                 f'</div>'
                 f'</div>'
-                f'<div class="pileup-info">{n_rows} aligned reads &times; '
-                f'{n_cols} bp</div>'
                 f'</div>'
                 f'<script>'
                 f'(function(){{'
@@ -195,19 +314,110 @@ def render(view: PileupView) -> str:
 
     body = '\n<hr class="group-sep">\n'.join(sections_html)
 
-    recoverable_list = ", ".join(view.highlight_ids)
-    recoverable_line = (
-        f' &middot; {_html.escape(view.highlight_label)}: {_html.escape(recoverable_list)}'
-        if recoverable_list else ""
+    # --- Masthead ---------------------------------------------------------
+    # With one group the page and the group are the same object, so they share
+    # one panel and the reference is named once.  With several, the panel
+    # carries the run and each group keeps its own header below.
+    if single:
+        head_name = metas[0]["name_html"]
+        head_chip = metas[0]["chip"]
+        head_facts = metas[0]["facts"]
+        # The title is usually just the group's name restated; show it only
+        # when the caller put something else there.
+        plain = view.title.strip().lower()
+        name = groups[0]["ref_id"].strip().lower()
+        eyebrow = "" if plain in (name, f"pileup: {name}") else (
+            f'<div class="sv-eyebrow">{_html.escape(view.title)}</div>'
+        )
+    else:
+        head_name = _html.escape(view.title)
+        head_chip = ""
+        eyebrow = ""
+        tally = {}
+        for g in groups:
+            verdict = _verdict(g["status"], g["is_recoverable"])
+            if verdict:
+                tally[verdict] = tally.get(verdict, 0) + 1
+        rollup = " ".join(
+            f'<b>{count}</b>&#8202;<span class="sv-glyph sv-glyph-{tier}">{glyph}</span>'
+            for (tier, glyph), count in tally.items()
+        )
+        head_facts = " &middot; ".join(
+            bit for bit in (
+                metas[0]["geometry"] if hoist_geometry else "",
+                f"<b>{view.total_reads}</b> reads" if view.total_reads else "",
+                f"<b>{len(groups)}</b> groups",
+                rollup,
+            ) if bit
+        )
+
+    # The star already marks the highlighted groups inline, so the masthead
+    # defines what it means rather than listing the same names again.  When no
+    # group carries the flag, the list is the only thing carrying the fact.
+    highlight_line = ""
+    if view.highlight_ids or any_starred:
+        if any_starred:
+            body_text = (
+                f'<span class="sv-star">&#9733;</span> = '
+                f'{_html.escape(view.highlight_label)}'
+            )
+        else:
+            body_text = (
+                f'{_html.escape(view.highlight_label)}: '
+                f'{_html.escape(", ".join(view.highlight_ids))}'
+            )
+        highlight_line = f'<div class="sv-highlight">{body_text}</div>'
+
+    # --- Key --------------------------------------------------------------
+    # Grouped by what the mark means, and it decodes the things a reader
+    # actually stalls on: region boundaries and disagreement flags are in, the
+    # reference bar is out because the row label already names it.
+    def _swatch(var: str, label: str, extra: str = "") -> str:
+        return (
+            f'<span class="sv-kitem">'
+            f'<i class="sv-sw" style="background:var(--{_p}-{var});{extra}"></i>'
+            f'{label}</span>'
+        )
+
+    clusters = [("bases", "".join(
+        _swatch(base.lower(), base) for base in ("A", "T", "C", "G")
+    ))]
+
+    cells = [_swatch("match", "match")]
+    if has_flanks:
+        cells.append(_swatch("vector", "vector"))
+    cells.append(_swatch("gap", "gap", f"border-color:var(--{_p}-tick)"))
+    clusters.append(("cells", "".join(cells)))
+
+    marks = []
+    if any_flags:
+        marks.append(
+            '<span class="sv-kitem"><i class="sv-sw sv-sw-tri"></i>'
+            '&gt;10% disagree</span>'
+        )
+    if has_flanks:
+        marks.append(
+            '<span class="sv-kitem"><i class="sv-sw sv-sw-dash"></i>'
+            'boundary</span>'
+        )
+    if marks:
+        clusters.append(("marks", "".join(marks)))
+
+    key_html = "".join(
+        f'<div class="sv-kgroup"><span class="sv-klabel">{label}</span>'
+        f'<div class="sv-krow">{items}</div></div>'
+        for label, items in clusters
     )
 
-    vector_legend = ""
-    if flank_lengths and (flank_lengths[0] or flank_lengths[1]):
-        vector_legend = (
-            '    <span class="legend-item">'
-            '<span class="legend-swatch" style="background:#dfe2e6;"></span>'
-            ' Vector Match</span>\n'
-        )
+    # --- Palette emitted once, read by both the swatches and the canvas ----
+    palette_css = "\n".join(
+        [":root {"]
+        + [f"    --{_p}-{k}: {v};" for k, v in _PALETTE["light"].items()]
+        + ["}", '[data-theme="dark"] {']
+        + [f"    --{_p}-{k}: {v};" for k, v in _PALETTE["dark"].items()]
+        + ["}"]
+    )
+    palette_js = _json.dumps(_PALETTE)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -216,12 +426,27 @@ def render(view: PileupView) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{_html.escape(title)}</title>
 <style id="{_style_id}">
+{palette_css}
 :root {{
     --{_p}-bg: #fafafa;
     --text: #1e293b;
     --muted: #94a3b8;
     --card-bg: #ffffff;
     --border: #e5e7eb;
+    --panel-line: #dfe3e8;
+    --ok: #0f7a52;
+    --ok-bg: #e8f6ef;
+    --warn: #a1650a;
+    --warn-bg: #fdf3e2;
+    --bad: #c22f2f;
+    --bad-bg: #fdecec;
+    --neutral: #5b6672;
+    --neutral-bg: #eef1f4;
+    /* One gutter width, used by the plot's row labels and by the indent on
+       every text block, so text and plot share a single left edge. */
+    --gutter: 2.5rem;
+    --gutter-gap: 4px;
+    --mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 }}
 [data-theme="dark"] {{
     --{_p}-bg: #1a1a2e;
@@ -229,6 +454,15 @@ def render(view: PileupView) -> str:
     --muted: #64748b;
     --card-bg: #16213e;
     --border: #334155;
+    --panel-line: #2c3a55;
+    --ok: #35c493;
+    --ok-bg: #14312a;
+    --warn: #e0a355;
+    --warn-bg: #33280f;
+    --bad: #f0655f;
+    --bad-bg: #35191c;
+    --neutral: #93a1b0;
+    --neutral-bg: #202b45;
 }}
 html, body {{
     background: var(--{_p}-bg);
@@ -237,58 +471,160 @@ html, body {{
     margin: 0;
     padding: 1.5rem;
 }}
-h1 {{
-    font-size: 1.4rem;
-    margin: 0 0 0.25rem;
+/* Every text block is indented by the plot's label gutter, so prose and
+   pileup share one left edge instead of the two the old negative margin left. */
+.sv-panel, .sv-group-head, .group-sep, .pileup-empty {{
+    margin-left: calc(var(--gutter) + var(--gutter-gap));
 }}
-.well-meta {{
+/* --- Masthead --- */
+.sv-panel {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.75rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 1.1rem;
+}}
+.sv-panel-id {{
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}}
+.sv-eyebrow {{
+    font: 600 0.66rem/1 var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--muted);
-    font-size: 0.9rem;
-    margin-bottom: 1.5rem;
 }}
-.group-header {{
+.sv-idline {{
     display: flex;
     align-items: baseline;
-    gap: 1rem;
-    margin: 1rem 0 0.5rem;
+    gap: 0.55rem;
+    flex-wrap: wrap;
 }}
-.ref-name {{
+.sv-name {{
+    font-size: 1.15rem;
     font-weight: 700;
-    font-size: 1.05rem;
+    letter-spacing: -0.01em;
 }}
-.group-meta {{
+.sv-star {{
+    color: var(--warn);
+    cursor: help;
+}}
+.sv-facts {{
+    font: 0.78rem/1.55 var(--mono);
     color: var(--muted);
-    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
 }}
-.status-correct {{
-    color: #059669;
-    font-weight: 600;
-}}
-.status-silent {{
-    color: #d97706;
-    font-weight: 600;
-}}
-.status-other {{
-    color: #ef4444;
-}}
-.protein-seq {{
-    margin-top: 0.5rem;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 10pt;
-    white-space: nowrap;
-    overflow-x: auto;
+.sv-facts b {{
     color: var(--text);
-    opacity: 0.85;
-}}
-.protein-label {{
-    color: var(--muted);
     font-weight: 600;
-    margin-right: 0.25rem;
-    user-select: none;
+}}
+.sv-highlight {{
+    font-size: 0.75rem;
+    color: var(--muted);
+}}
+/* --- Verdict chip: hue, word, and glyph, so colour is never the only cue --- */
+.sv-chip {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.28rem 0.45rem;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+}}
+.sv-glyph {{
+    font-family: var(--mono);
+    font-size: 0.85em;
+}}
+.sv-chip-ok {{ color: var(--ok); background: var(--ok-bg); }}
+.sv-chip-warn {{ color: var(--warn); background: var(--warn-bg); }}
+.sv-chip-bad {{ color: var(--bad); background: var(--bad-bg); }}
+.sv-chip-neutral {{ color: var(--neutral); background: var(--neutral-bg); }}
+.sv-glyph-ok {{ color: var(--ok); }}
+.sv-glyph-warn {{ color: var(--warn); }}
+.sv-glyph-bad {{ color: var(--bad); }}
+.sv-glyph-neutral {{ color: var(--neutral); }}
+/* --- Key: grouped by what the mark means --- */
+.sv-key {{
+    display: flex;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}}
+.sv-kgroup {{
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}}
+.sv-klabel {{
+    font: 600 0.6rem/1 var(--mono);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+}}
+.sv-krow {{
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}}
+.sv-kitem {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    color: var(--text);
+    white-space: nowrap;
+}}
+.sv-sw {{
+    width: 10px;
+    height: 10px;
+    border-radius: 1px;
+    border: 1px solid transparent;
+    display: inline-block;
+    flex: none;
+}}
+.sv-sw-tri {{
+    width: 0;
+    height: 0;
+    border-radius: 0;
+    border: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--{_p}-flag);
+}}
+.sv-sw-dash {{
+    width: 0;
+    height: 11px;
+    border-radius: 0;
+    border: none;
+    border-left: 2px dashed var(--{_p}-boundary);
+}}
+/* --- Per-group header, shown only when there is more than one group --- */
+.sv-group-head {{
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    /* Longhand: a `margin` shorthand here would reset the gutter indent. */
+    margin-top: 1.25rem;
+    margin-bottom: 0.45rem;
+}}
+.sv-group-name {{
+    font-weight: 700;
+    font-size: 1rem;
 }}
 .pileup-container {{
     margin-bottom: 0.5rem;
-    margin-left: -2.5rem;
 }}
 .pileup-outer {{
     display: flex;
@@ -332,8 +668,8 @@ h1 {{
     flex-direction: column;
     justify-content: flex-start;
     flex-shrink: 0;
-    width: 2.5rem;
-    padding-right: 4px;
+    width: var(--gutter);
+    padding-right: var(--gutter-gap);
     font: 9px/1 SF Mono, Menlo, Consolas, monospace;
     color: var(--muted);
     text-align: right;
@@ -344,13 +680,6 @@ h1 {{
     align-items: center;
     justify-content: flex-end;
 }}
-.pileup-ruler {{
-}}
-.pileup-info {{
-    font-size: 0.75rem;
-    color: var(--muted);
-    margin-top: 0.25rem;
-}}
 .pileup-empty {{
     font-size: 0.85rem;
     color: var(--muted);
@@ -360,33 +689,17 @@ h1 {{
     border: 1px solid var(--border);
     border-radius: 6px;
 }}
-.legend {{
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    font-size: 0.8rem;
-    color: var(--muted);
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-}}
-.legend-item {{
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-}}
-.legend-swatch {{
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
-    border: 1px solid var(--border);
-}}
 .group-sep {{
     border: none;
     border-top: 1px solid var(--border);
-    margin: 1.5rem 0;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
 }}
 </style>
 <script>
+/* The one palette, shared with the CSS custom properties above.  A swatch and
+   the cell it describes cannot drift apart because both read this table. */
+var SV_PALETTE = {palette_js};
 function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols) {{
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
@@ -420,14 +733,13 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
   var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  var matchColor = isDark ? '#4a5568' : '#c8ccd0';
-  var vectorMatchColor = isDark ? '#3a4455' : '#dfe2e6';
-  var gapColor = isDark ? '#ffffff' : '#ffffff';
-  var refColor = isDark ? '#e0e0e0' : '#1e293b';
+  var P = SV_PALETTE[isDark ? 'dark' : 'light'];
+  var matchColor = P.match;
+  var vectorMatchColor = P.vector;
+  var gapColor = P.gap;
+  var refColor = P.ref;
   var consMatchColor = matchColor;
-  var baseColors = isDark
-    ? {{'A':'#ff6b6b','T':'#339af0','C':'#ffa94d','G':'#ffd43b'}}
-    : {{'A':'#e03131','T':'#1971c2','C':'#e8590c','G':'#e67700'}};
+  var baseColors = {{'A': P.a, 'T': P.t, 'C': P.c, 'G': P.g}};
   // Flagged columns: positions where >10% of reads disagree with reference.
   // Falls back to consensus-derived mismatches when flaggedCols not provided.
   var mismatchCols = flaggedCols || [];
@@ -453,9 +765,9 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     rulerCanvas.style.height = rulerH + 'px';
     var rc = rulerCanvas.getContext('2d');
     rc.scale(dpr, dpr);
-    var tickColor = isDark ? '#64748b' : '#94a3b8';
-    var labelColor = isDark ? '#e0e0e0' : '#1e293b';
-    var boundaryColor = isDark ? '#f59e0b' : '#d97706';
+    var tickColor = P.tick;
+    var labelColor = P['tick-label'];
+    var boundaryColor = P.boundary;
     rc.clearRect(0, 0, canvasW, rulerH);
     var tickBottom = rulerH - triRowH;
     // Region labels on top row (if flanks present)
@@ -515,7 +827,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       var triH = 10, triW = Math.max(cellW * 2, 9);
       for (var _ti = 0; _ti < mismatchCols.length; _ti++) {{
         var mc = mismatchCols[_ti];
-        rc.fillStyle = baseColors[cons[mc]] || '#94a3b8';
+        rc.fillStyle = baseColors[cons[mc]] || P.flag;
         var cx = mc * cellW + cellW / 2;
         var ty = tickBottom + 1;
         rc.beginPath();
@@ -585,7 +897,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }} else if (ch === '-') {{
       ctx.fillStyle = gapColor;
     }} else {{
-      ctx.fillStyle = baseColors[ch] || '#94a3b8';
+      ctx.fillStyle = baseColors[ch] || P.flag;
     }}
     ctx.fillRect(i * cellW, consY, cellW, consH);
   }}
@@ -600,7 +912,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       }} else if (ch === '-') {{
         ctx.fillStyle = gapColor;
       }} else {{
-        ctx.fillStyle = baseColors[ch] || '#94a3b8';
+        ctx.fillStyle = baseColors[ch] || P.flag;
       }}
       ctx.fillRect(c * cellW, y, cellW, cellH);
     }}
@@ -609,10 +921,10 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var aaY = readsY + nRows * cellH + aaGap;
   if (hasAA) {{
     var insStart = flanks[0];
-    var aaMatchColor = isDark ? '#4a5568' : '#d1d5db';
-    var aaDiffColor = isDark ? '#ff6b6b' : '#e03131';
-    var aaDiffBg = isDark ? 'rgba(255,107,107,0.18)' : 'rgba(224,49,49,0.1)';
-    var aaBg = isDark ? '#1e293b' : '#f8fafc';
+    var aaMatchColor = P['aa-match'];
+    var aaDiffColor = P['aa-diff'];
+    var aaDiffBg = P['aa-diff-bg'];
+    var aaBg = P['aa-bg'];
     var aaFont = Math.min(aaH - 2, Math.max(7, aaCodonW - 2));
     ctx.font = aaFont + 'px SF Mono,Menlo,Consolas,monospace';
     ctx.textAlign = 'center';
@@ -657,7 +969,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }}
 
     // Subtle codon grid lines
-    ctx.strokeStyle = isDark ? '#334155' : '#e5e7eb';
+    ctx.strokeStyle = P['aa-grid'];
     ctx.lineWidth = 0.5;
     for (var ai = 1; ai < refAA.length; ai++) {{
       var lx = insStart * cellW + ai * aaCodonW;
@@ -668,7 +980,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   if (flanks) {{
     ctx.save();
     ctx.setLineDash([4, 3]);
-    ctx.strokeStyle = isDark ? '#f59e0b' : '#d97706';
+    ctx.strokeStyle = P.boundary;
     ctx.lineWidth = 1;
     var pH = pileupH;
     if (flanks[0] > 0) {{
@@ -774,21 +1086,13 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
 </script>
 </head>
 <body>
-<h1>{_html.escape(title)}</h1>
-<div class="well-meta">
-    {view.total_reads} total reads &middot;
-    Top fraction: {view.top_fraction:.0%}{recoverable_line}
-</div>
-<div class="legend">
-    <span style="font-weight:600;">Legend:</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#c8ccd0;"></span> Match</span>
-{vector_legend}    <span class="legend-item"><span class="legend-swatch" style="background:#e03131;"></span> A</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#1971c2;"></span> T</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#e8590c;"></span> C</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#e67700;"></span> G</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#ffffff;border:1px solid #d1d5db;"></span> Gap</span>
-    <span class="legend-item"><span class="legend-swatch" style="background:#1e293b;"></span> Reference</span>
-
+<div class="sv-panel">
+    <div class="sv-panel-id">
+        {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{head_chip}</div>
+        <div class="sv-facts">{head_facts}</div>
+        {highlight_line}
+    </div>
+    <div class="sv-key">{key_html}</div>
 </div>
 {body}
 <script id="{_script_id}">
