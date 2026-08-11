@@ -96,6 +96,27 @@ def test_flanks_name_the_insert_span_once():
     assert "insert <b>11</b>&ndash;<b>90</b>" in html
 
 
+def test_every_fact_says_what_its_number_is():
+    """The line is deliberately terse, which left "10 rows drawn" sitting next
+    to "65 of 100 reads" as two read counts in similar words with nothing to
+    tell them apart.  Each fact carries the distinction in a tooltip instead of
+    spending line width on it.
+    """
+    ref = "ACGT" * 25
+    rows = [[(b, True) for b in ref]]
+    html = render(_view(flanks=(10, 10), total_reads=9,
+                        groups=[PileupGroup("g", ref, rows, n_reads=4)]))
+
+    facts = re.findall(r'<span class="sv-fact" title="([^"]*)">(.*?)</span>', html)
+    assert facts, "no fact carries a tooltip"
+
+    labelled = {re.sub(r"<[^>]+>", "", text) for _, text in facts}
+    assert {"4 of 9 reads", "1 rows drawn", "100.0% identity"} <= labelled
+
+    for tip, text in facts:
+        assert tip.strip(), f"{text} has an empty tooltip"
+
+
 # --- The masthead ---------------------------------------------------------
 
 def test_swatches_and_canvas_read_one_palette():

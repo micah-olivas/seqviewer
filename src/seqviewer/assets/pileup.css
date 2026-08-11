@@ -92,6 +92,15 @@ html, body {
     color: var(--muted);
     font-variant-numeric: tabular-nums;
 }
+/* Each fact explains itself on hover; the cursor is the only standing hint,
+   so the line reads the same as before until someone reaches for it. */
+.sv-fact {
+    cursor: help;
+}
+.sv-fact:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+}
 .sv-facts b {
     color: var(--text);
     font-weight: 600;
@@ -142,11 +151,15 @@ html, body {
     text-transform: uppercase;
     color: var(--muted);
 }
+/* Swatches stack under their label so each group reads as one short column
+   and the labels stay aligned across groups.  The masthead is a wrapping flex
+   row, so on a narrow page the groups wrap as whole columns rather than
+   breaking a group's items across lines. */
 .sv-krow {
     display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-start;
 }
 .sv-kitem {
     display: inline-flex;
