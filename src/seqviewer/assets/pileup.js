@@ -20,7 +20,12 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var hasAA = refAA && consAA && flanks;
   var aaH = hasAA ? 14 : 0;       // height of each AA row
   var aaGap = hasAA ? 6 : 0;      // gap before AA section
-  var aaCodonW = Math.max(3 * cellW, 8);  // min 8px so AA letters are legible
+  // A codon is exactly the three bases it translates. The old floor of 8px
+  // made each glyph 2px wider than its codon whenever cellW was 2 -- every
+  // reference >= 500 bp -- so the drift accumulated linearly and the last of
+  // 266 residues on a 1000 bp insert sat 530px from the bases it came from.
+  // A track that does not line up with the reference cannot be read against it.
+  var aaCodonW = 3 * cellW;
 
   // Canvas must be wide enough for both the nucleotide pileup and the AA section
   var aaEndPx = hasAA ? flanks[0] * cellW + refAA.length * aaCodonW : 0;
@@ -213,10 +218,24 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var aaDiffColor = P['aa-diff'];
     var aaDiffBg = P['aa-diff-bg'];
     var aaBg = P['aa-bg'];
-    var aaFont = Math.min(aaH - 2, Math.max(7, aaCodonW - 2));
+    var aaFont = Math.min(aaH - 2, aaCodonW - 1);
+    var lettersFit = aaFont >= 7;
     ctx.font = aaFont + 'px SF Mono,Menlo,Consolas,monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    // At 6px a codon cannot hold a legible letter, so weight carries the
+    // meaning instead: a match is a quiet baseline tick, a mismatch is a full
+    // block. This branch was unreachable while the 8px floor existed.
+    function drawResidue(letter, x, y, isMatch) {
+      if (lettersFit) {
+        ctx.fillText(letter, x + aaCodonW / 2, y + aaH / 2);
+      } else if (isMatch) {
+        ctx.fillRect(x, y + aaH - 3, Math.max(1, aaCodonW - 1), 2);
+      } else {
+        ctx.fillRect(x, y + 1, Math.max(1, aaCodonW - 1), aaH - 2);
+      }
+    }
 
     // Draw background for the insert region
     var insX = insStart * cellW;
@@ -236,11 +255,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
         ctx.fillRect(ax, aaY, aaCodonW, aaH);
       }
       ctx.fillStyle = match ? aaMatchColor : aaDiffColor;
-      if (aaCodonW >= 7) {
-        ctx.fillText(rAA, ax + aaCodonW / 2, aaY + aaH / 2);
-      } else {
-        ctx.fillRect(ax + 1, aaY + 2, aaCodonW - 2, aaH - 4);
-      }
+      drawResidue(rAA, ax, aaY, match);
 
       // Cons AA row
       var caaY = aaY + aaH + 2;
@@ -249,17 +264,14 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
         ctx.fillRect(ax, caaY, aaCodonW, aaH);
       }
       ctx.fillStyle = match ? aaMatchColor : aaDiffColor;
-      if (aaCodonW >= 7) {
-        ctx.fillText(cAA, ax + aaCodonW / 2, caaY + aaH / 2);
-      } else {
-        ctx.fillRect(ax + 1, caaY + 2, aaCodonW - 2, aaH - 4);
-      }
+      drawResidue(cAA, ax, caaY, match);
     }
 
-    // Subtle codon grid lines
+    // Subtle codon grid lines, but only when the pitch is wide enough that a
+    // line per codon reads as structure rather than as hatching.
     ctx.strokeStyle = P['aa-grid'];
     ctx.lineWidth = 0.5;
-    for (var ai = 1; ai < refAA.length; ai++) {
+    for (var ai = 1; aaCodonW >= 9 && ai < refAA.length; ai++) {
       var lx = insStart * cellW + ai * aaCodonW;
       ctx.beginPath(); ctx.moveTo(lx, aaY); ctx.lineTo(lx, aaY + aaH * 2 + 2); ctx.stroke();
     }
@@ -341,7 +353,10 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       tooltip.textContent = rl + 'Consensus pos ' + (col + 1) + ': ' + base + note;
     } else if (hasAA && yp >= aaY && yp < aaY + aaH * 2 + 2) {
       var insStart = flanks[0];
-      var aaIdx = Math.floor((col - insStart) / 3);
+      // Derived from the drawn geometry, not from the nucleotide rate: reading
+      // the residue index a different way than it was placed is what made the
+      // tooltip name a third, differently wrong residue.
+      var aaIdx = Math.floor((x - insStart * cellW) / aaCodonW);
       if (aaIdx >= 0 && aaIdx < refAA.length) {
         var isRefRow = yp < aaY + aaH;
         var which = isRefRow ? 'Ref' : 'Cons';
