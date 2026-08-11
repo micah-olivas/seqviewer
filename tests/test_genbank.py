@@ -40,8 +40,13 @@ def _record(*features, length=100, topology="circular"):
         block = seq[i:i + 60]
         groups = " ".join(block[j:j + 10] for j in range(0, len(block), 10))
         origin.append(f"{i + 1:>9} {groups}")
+    # The LOCUS line is column-sensitive: the length field ends at column 40 and
+    # the topology begins at 56.  Getting it wrong still parses, but warns on
+    # every record and buries real warnings in the noise.
+    locus = ("LOCUS" + " " * 7 + "test".ljust(17) + f"{length:>11} bp"
+             + "    " + "DNA".ljust(8) + topology.ljust(9) + "SYN 01-JAN-2020")
     return (
-        f"LOCUS       test  {length} bp    DNA     {topology} SYN 01-JAN-2020\n"
+        locus + "\n"
         "FEATURES             Location/Qualifiers\n"
         + "\n".join(features) + "\n"
         "ORIGIN\n" + "\n".join(origin) + "\n//\n"
