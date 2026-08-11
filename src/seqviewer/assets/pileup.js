@@ -58,7 +58,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     return isVector(col) ? vectorMatchColor : matchColor;
   }
   // --- Ruler ---
-  var rulerH = (flanks ? 24 : 14) + triRowH;
+  var rulerH = 14 + triRowH;
   if (rulerCanvas) {
     rulerCanvas.width = canvasW * dpr;
     rulerCanvas.height = rulerH * dpr;
@@ -71,39 +71,20 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var boundaryColor = P.boundary;
     rc.clearRect(0, 0, canvasW, rulerH);
     var tickBottom = rulerH - triRowH;
-    // Region labels on top row (if flanks present)
+    // The regions are named by the band above the track now, not by text
+    // floating here, so this only draws their boundaries.
     var tickRowY = 0;
     if (flanks) {
-      tickRowY = 11;
-      rc.fillStyle = boundaryColor;
-      rc.font = '9px SF Mono,Menlo,Consolas,monospace';
-      rc.textAlign = 'center';
-      rc.textBaseline = 'top';
-      var bLeft = flanks[0] * cellW;
-      var bRight = (nCols - flanks[1]) * cellW;
-      var minLabelPx = 40;
-      if (flanks[0] > 0 && flanks[0] * cellW > minLabelPx) {
-        rc.fillText("5′ vector", bLeft / 2, 0);
-      }
-      var insertW = bRight - bLeft;
-      if (insertW > minLabelPx) {
-        rc.fillText("insert", bLeft + insertW / 2, 0);
-      }
-      if (flanks[1] > 0 && flanks[1] * cellW > minLabelPx) {
-        rc.fillText("3′ vector", bRight + (totalW - bRight) / 2, 0);
-      }
-      // Boundary dashed lines (start below both text rows, stop above triangle row)
-      rc.setLineDash([3, 2]);
       rc.strokeStyle = boundaryColor;
       rc.lineWidth = 1;
-      var dashY = tickRowY + 12;
-      if (flanks[0] > 0 && dashY < tickBottom) {
-        rc.beginPath(); rc.moveTo(bLeft, dashY); rc.lineTo(bLeft, tickBottom); rc.stroke();
+      var bLeft = flanks[0] * cellW;
+      var bRight = (nCols - flanks[1]) * cellW;
+      if (flanks[0] > 0) {
+        rc.beginPath(); rc.moveTo(bLeft, 0); rc.lineTo(bLeft, tickBottom); rc.stroke();
       }
-      if (flanks[1] > 0 && dashY < tickBottom) {
-        rc.beginPath(); rc.moveTo(bRight, dashY); rc.lineTo(bRight, tickBottom); rc.stroke();
+      if (flanks[1] > 0) {
+        rc.beginPath(); rc.moveTo(bRight, 0); rc.lineTo(bRight, tickBottom); rc.stroke();
       }
-      rc.setLineDash([]);
     }
     // Tick labels + ticks (stop above triangle row)
     rc.strokeStyle = tickColor;
@@ -286,7 +267,6 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   // --- Region boundary dashed lines on pileup canvas ---
   if (flanks) {
     ctx.save();
-    ctx.setLineDash([4, 3]);
     ctx.strokeStyle = P.boundary;
     ctx.lineWidth = 1;
     var pH = pileupH;

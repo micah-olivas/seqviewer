@@ -19,6 +19,8 @@ from importlib import resources as _resources
 from .annotate import cell_width as _cell_width
 from .annotate import plan_track as _plan_track
 from .annotate import track_style as _track_style
+from .annotate import region_band_svg as _region_band_svg
+from .annotate import region_spans as _region_spans
 from .annotate import track_svg as _track_svg
 from .codon import translate as _translate
 from .pileup import PileupView
@@ -62,6 +64,7 @@ _PALETTE = {
         "c": "#e8590c",
         "g": "#e67700",
         "boundary": "#d97706",
+        "region": "rgba(56,132,255,0.10)",
         "tick": "#94a3b8",
         "tick-label": "#1e293b",
         "flag": "#94a3b8",
@@ -81,6 +84,7 @@ _PALETTE = {
         "c": "#ffa94d",
         "g": "#ffd43b",
         "boundary": "#f59e0b",
+        "region": "rgba(120,170,255,0.16)",
         "tick": "#64748b",
         "tick-label": "#e0e0e0",
         "flag": "#64748b",
@@ -325,6 +329,19 @@ def render(view: PileupView) -> str:
         annot_plans.append((annot_plan, annot_prefix))
         annot_h = annot_plan.height + (5 if annot_plan.glyphs else 0)
 
+        # The flank regions get a tint at the very back of the stack, so the
+        # insert reads as a lit window between two shoulders before any text is
+        # read.  It sits behind the glyphs rather than over them: it is context,
+        # and tinting a feature's own colour would misreport it.
+        region_tint = "".join(
+            f'<div class="sv-region" style="left:{start * cell_w}px;'
+            f'width:{(end - start) * cell_w}px"></div>'
+            for start, end, _label, kind in _region_spans(flank_lengths, ref_len)
+            if kind == "vec"
+        )
+        band_svg = _region_band_svg(flank_lengths, ref_len, cell_w=cell_w)
+        band_h = 15 + 4 if band_svg else 0
+
         if n_rows == 0:
             pileup_block = (
                 f'<div class="pileup-empty">'
@@ -338,6 +355,8 @@ def render(view: PileupView) -> str:
                 f'<div class="pileup-labels" id="labels-{idx}"></div>'
                 f'<div class="pileup-scroll-wrap" id="wrap-{idx}">'
                 f'<div class="pileup-scroll" id="scroll-{idx}">'
+                f'{region_tint}'
+                f'{band_svg}'
                 f'{annot_svg}'
                 f'<canvas id="ruler-{idx}" class="pileup-ruler"></canvas>'
                 f'<canvas id="pileup-{idx}"></canvas>'
@@ -354,7 +373,7 @@ def render(view: PileupView) -> str:
                 f'var refAA={ref_protein_js};'
                 f'var consAA={cons_protein_js};'
                 f'var flaggedCols={flagged_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h});'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h});'
                 f'}})();'
                 f'</script>'
             )

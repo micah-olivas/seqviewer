@@ -286,3 +286,49 @@ html, body {
 .sv-annot-out {
     fill: var(--muted);
 }
+/* --- Region tint and band ---
+   The flank regions are tinted at the very back of the scroll container, so the
+   insert reads as a lit window between two shoulders before any label is read.
+   The tint sits behind the glyphs and the canvas rather than over them: it is
+   context, and washing a feature's own colour would misreport it. */
+.pileup-scroll {
+    position: relative;
+}
+.sv-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--__PREFIX__-region);
+    z-index: 0;
+    pointer-events: none;
+}
+.sv-annot,
+.sv-band,
+.pileup-scroll canvas {
+    position: relative;
+    z-index: 1;
+}
+.sv-band {
+    display: block;
+    margin-bottom: 4px;
+}
+.sv-band text {
+    font: 600 11px SF Mono, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+}
+.sv-band-vec {
+    fill: var(--__PREFIX__-region);
+    stroke: var(--border);
+}
+.sv-band-ins {
+    fill: none;
+    stroke: var(--__PREFIX__-boundary);
+}
+.sv-band-tvec {
+    fill: var(--text);
+    opacity: 0.75;
+}
+.sv-band-tins {
+    fill: var(--__PREFIX__-boundary);
+}

@@ -24,6 +24,7 @@ __all__ = [
     "cell_width", "plan_track", "track_svg", "track_style", "TrackPlan", "Glyph",
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
+    "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -438,6 +439,66 @@ def _path(glyph: Glyph) -> str:
 def _escape(text: str) -> str:
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+#: Height of the region band, and the narrowest block that can hold a label.
+REGION_BAND_HEIGHT = 15
+_REGION_MIN_LABEL = 90
+
+
+def region_spans(flanks, ref_len: int):
+    """Split *ref_len* into ``(start, end, label, kind)`` blocks from *flanks*.
+
+    Returns nothing when there are no flanks, which is the same condition under
+    which the page draws no boundaries: a reference with no designated focus
+    region has no vector and insert to name.
+    """
+    if not flanks or not (flanks[0] or flanks[1]):
+        return []
+    five, three = flanks
+    blocks = [
+        (0, five, "5′ vector", "vec"),
+        (five, ref_len - three, "insert", "ins"),
+        (ref_len - three, ref_len, "3′ vector", "vec"),
+    ]
+    return [b for b in blocks if b[1] > b[0]]
+
+
+def region_band_svg(flanks, ref_len: int, cell_w: Optional[int] = None,
+                    prefix: str = "sv-band") -> str:
+    """Draw the reference's regions as a labelled band.
+
+    The regions used to be named by small text floating in an empty row above
+    the ruler, attached to nothing, which is how a label gets missed.  Set inside
+    a block it cannot float, and it can carry type large enough to read.
+    """
+    blocks = region_spans(flanks, ref_len)
+    if not blocks:
+        return ""
+    if cell_w is None:
+        cell_w = cell_width(ref_len)
+    width = ref_len * cell_w
+    height = REGION_BAND_HEIGHT
+    parts = [
+        f'<svg class="{prefix}" width="{width:.0f}" height="{height}" '
+        f'viewBox="0 0 {width:.0f} {height}" role="img" '
+        f'aria-label="reference regions">'
+    ]
+    for start, end, label, kind in blocks:
+        x0, x1 = start * cell_w, end * cell_w
+        span = x1 - x0
+        parts.append(f"<g><title>{_escape(label)}</title>")
+        parts.append(f'<rect class="{prefix}-{kind}" x="{x0:.1f}" y="0" '
+                     f'width="{span:.1f}" height="{height}" rx="2"/>')
+        if span > _REGION_MIN_LABEL:
+            parts.append(
+                f'<text class="{prefix}-t{kind}" x="{x0 + span / 2:.1f}" '
+                f'y="{height / 2:.1f}" text-anchor="middle" '
+                f'dominant-baseline="central">{_escape(label)}</text>'
+            )
+        parts.append("</g>")
+    parts.append("</svg>")
+    return "".join(parts)
 
 
 def track_style(plan: TrackPlan, prefix: str = "svf") -> str:
