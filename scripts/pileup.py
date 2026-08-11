@@ -3,11 +3,12 @@
 
     pileup.py reads.fastq reference out.html [options]
 
-The reference may be a FASTA, a GenBank ``.gb``, or a SnapGene ``.dna``.  The
-annotated formats need biopython and carry topology and features, which become a
-``Reference``: a circular topology is aligned against a doubled copy so reads
-crossing the origin stay whole, and a named feature can supply the flanks the
-page labels.
+Reading the reference is :mod:`seqviewer.genbank`'s job — FASTA, GenBank, ApE,
+and SnapGene all arrive as a ``Reference`` with its topology and features.  What
+is left here is the part the package does not cover: reading a FASTQ, and the
+two adjustments a plasmid needs.  A circular reference is aligned against a
+doubled copy so reads crossing the origin stay whole, and a named feature can
+supply the flanks the page marks.
 
 seqviewer takes reads as ``Read(name, seq, qual)`` records, so FASTQ parsing is
 the caller's job.  Everything after that is grid_from_reads plus render.
@@ -20,8 +21,9 @@ import gzip
 import sys
 from pathlib import Path
 
-from seqviewer import Feature, PileupGroup, PileupView, Reference, render
+from seqviewer import PileupGroup, PileupView, render
 from seqviewer.align import Read, grid_from_reads
+from seqviewer.genbank import load_reference
 
 
 def read_fastq(path, name_contains=None, limit=None, min_len=0):
@@ -45,67 +47,6 @@ def read_fastq(path, name_contains=None, limit=None, min_len=0):
             if limit and len(out) >= limit:
                 break
     return out
-
-
-def _wraps_origin(location, seq_len, circular):
-    """Whether a multi-part location is one feature crossing the origin.
-
-    A part count above one is not enough: a spliced ``CDS join(20..25,35..45)``
-    also has two parts and does not wrap.  A genuine wrapper is the only case
-    that reaches both ends of the sequence, and only a circular record can have
-    one.  This matters because ``CompoundLocation.start``/``.end`` report the
-    min/max hull, so a wrapper looks like it spans the whole reference.
-    """
-    if not circular or len(location.parts) < 2:
-        return False
-    starts = {int(p.start) for p in location.parts}
-    ends = {int(p.end) for p in location.parts}
-    return 0 in starts and seq_len in ends
-
-
-def load_reference(path):
-    """Load a FASTA or SnapGene .dna file as a Reference."""
-    path = Path(path)
-    ANNOTATED = {".dna": "snapgene", ".gb": "genbank", ".gbk": "genbank",
-                 ".genbank": "genbank", ".ape": "genbank"}
-    fmt = ANNOTATED.get(path.suffix.lower())
-    if fmt:
-        from Bio import SeqIO                # only annotated formats need biopython
-
-        rec = next(SeqIO.parse(str(path), fmt))
-        circular = rec.annotations.get("topology") == "circular"
-        features = []
-        for f in rec.features:
-            if f.type == "source":           # spans the whole record; not informative
-                continue
-            label = (f.qualifiers.get("label") or f.qualifiers.get("gene")
-                     or f.qualifiers.get("product") or f.qualifiers.get("name")
-                     or [f.type])[0]
-            wraps = _wraps_origin(f.location, len(rec.seq), circular)
-            features.append(Feature(
-                type=f.type,
-                start=int(f.location.start),
-                end=int(f.location.end),
-                strand=f.location.strand,
-                label=label,
-                wraps_origin=wraps,
-            ))
-        return Reference(
-            seq=str(rec.seq).upper(),
-            name=path.stem,
-            topology=rec.annotations.get("topology", "linear"),
-            features=features,
-        )
-
-    name, chunks = path.stem, []
-    for line in path.read_text().splitlines():
-        if line.startswith(">"):
-            if chunks:
-                break
-            name = line[1:].strip().split()[0]
-        else:
-            chunks.append(line.strip())
-    return Reference(seq="".join(chunks).upper(), name=name)
 
 
 def write_fasta(reference, path, doubled=False):
@@ -205,8 +146,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fastq")
     parser.add_argument("reference",
-                        help="FASTA, GenBank (.gb/.gbk), or SnapGene (.dna); "
+                        help="FASTA, GenBank (.gb/.gbk/.ape), or SnapGene (.dna); "
                              "the annotated formats need biopython")
+    parser.add_argument("--skip-types", metavar="TYPES",
+                        help="comma-separated feature types to drop, replacing "
+                             "the default (source,primer_bind).  Pass "
+                             "'source' to keep primer sites, which is what "
+                             "shows the Golden Gate junctions on an amplicon; "
+                             "pass '' to keep every feature the file declares")
     parser.add_argument("out", help="HTML page to write")
     parser.add_argument("--name", help="keep only reads whose name contains this")
     parser.add_argument("--max", type=int, help="cap on reads drawn")
@@ -228,7 +175,9 @@ def main(argv=None):
     parser.add_argument("--title")
     args = parser.parse_args(argv)
 
-    reference = load_reference(args.reference)
+    skip_types = (None if args.skip_types is None
+                  else tuple(t for t in args.skip_types.split(",") if t))
+    reference = load_reference(args.reference, skip_types=skip_types)
     print(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
           f"{len(reference.features)} features")
 
