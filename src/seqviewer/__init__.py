@@ -27,8 +27,11 @@ viewing.
 
 from __future__ import annotations
 
-from .model import Cell, Feature, PileupGroup, PileupView, Reference, Row, Theme
+from .construct import Feature, Reference
+from .grid import Cell, Row
+from .pileup import PileupGroup, PileupView
 from .render import render
+from .theme import Theme
 
 __version__ = "0.1.0"
 

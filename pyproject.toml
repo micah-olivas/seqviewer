@@ -16,7 +16,9 @@ dependencies = []
 sam = ["pysam>=0.20"]
 # Aligning raw reads first. Also needs minimap2 and samtools on PATH.
 align = ["pysam>=0.20"]
-dev = ["pytest>=7"]
+# Reading an annotated reference (GenBank, SnapGene) in scripts/pileup.py.
+annot = ["biopython>=1.80"]
+dev = ["pytest>=7", "biopython>=1.80"]
 
 [build-system]
 requires = ["hatchling"]

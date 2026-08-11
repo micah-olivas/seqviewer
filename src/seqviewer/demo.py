@@ -13,7 +13,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .model import Cell, Feature, PileupGroup, PileupView, Reference, Row
+from .construct import Feature, Reference
+from .grid import Cell, Row
+from .pileup import PileupGroup, PileupView
 from .render import render
 
 BASES = "ACGT"
@@ -101,7 +103,6 @@ def build_view(seed: int = 42) -> PileupView:
         reference=reference,
         groups=groups,
         total_reads=100,
-        top_fraction=0.65,
         highlight_ids=["pUC19-WT"],
         highlight_label="Recoverable",
     )

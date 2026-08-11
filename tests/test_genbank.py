@@ -12,7 +12,7 @@ pytest.importorskip("Bio")
 from seqviewer.genbank import (  # noqa: E402
     DEFAULT_SKIP_TYPES, feature_spans, load_reference,
 )
-from seqviewer.model import Feature  # noqa: E402
+from seqviewer.construct import Feature  # noqa: E402
 
 
 def _feature(key, location, **qualifiers):

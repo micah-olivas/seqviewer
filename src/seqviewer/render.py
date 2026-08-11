@@ -16,7 +16,7 @@ import html as _html
 import json as _json
 
 from .codon import translate as _translate
-from .model import PileupView
+from .pileup import PileupView
 
 __all__ = ["render"]
 

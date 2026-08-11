@@ -1,4 +1,4 @@
-"""Read an annotated construct file into a :class:`~seqviewer.model.Reference`.
+"""Read an annotated construct file into a :class:`~seqviewer.construct.Reference`.
 
 GenBank, SnapGene ``.dna``, and ApE ``.gb`` files all carry the annotations a
 pileup wants to draw over its reference bar.  Biopython does the parsing; this
@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .model import Feature, Reference
+from .construct import Feature, Reference
 
 __all__ = ["load_reference", "DEFAULT_SKIP_TYPES", "feature_spans"]
 
