@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -82,12 +83,155 @@ def test_empty_group_renders_a_notice_rather_than_failing():
     assert "No aligned reads available" in html
 
 
-def test_flanks_add_the_vector_legend_and_region_data():
+def test_flanks_add_the_vector_key_and_region_data():
     without = render(_view())
     with_flanks = render(_view(flanks=(10, 10)))
-    assert "Vector Match" not in without
-    assert "Vector Match" in with_flanks
+    assert ">vector</span>" not in without
+    assert ">vector</span>" in with_flanks
     assert "var flanks=[10,10];" in with_flanks
+
+
+def test_flanks_name_the_insert_span_once():
+    html = render(_view(flanks=(10, 10)))
+    assert "insert <b>11</b>&ndash;<b>90</b>" in html
+
+
+# --- The masthead ---------------------------------------------------------
+
+def test_swatches_and_canvas_read_one_palette():
+    """The legend used to hardcode light-mode hexes while the canvas swapped
+    palettes in JS, so in dark mode a swatch could contradict the cell it
+    described.
+
+    Asserted as the invariant — every colour the canvas fills with equals the
+    custom property the matching swatch reads, in both themes — rather than on
+    the shape of the emission, so reshaping the JS cannot make this pass while
+    the two silently drift apart.
+    """
+    html = render(_view(flanks=(10, 10)))
+
+    payload = re.search(r"var SV_PALETTE = (\{.*?\});", html, re.S)
+    assert payload, "the page emits no palette for the canvas"
+    canvas = json.loads(payload.group(1))
+
+    def custom_properties(selector):
+        block = html.split(selector, 1)[1].split("}", 1)[0]
+        return dict(re.findall(r"--cv-([a-z-]+):\s*([^;]+);", block))
+
+    for theme, selector in (("light", ":root {"), ("dark", '[data-theme="dark"] {')):
+        declared = custom_properties(selector)
+        for key, value in canvas[theme].items():
+            assert declared.get(key) == value, (
+                f"{theme} {key}: swatch reads {declared.get(key)!r}, "
+                f"canvas fills {value!r}"
+            )
+
+    # And the swatches read those properties rather than carrying literals.
+    swatches = re.findall(r'class="sv-sw"[^>]*style="background:([^;"]+)', html)
+    assert swatches, "no swatches rendered"
+    assert all(value.startswith("var(--cv-") for value in swatches), swatches
+
+
+def test_text_and_plot_share_one_left_edge():
+    assert "margin-left: -2.5rem" not in render(_view())
+
+
+def test_facts_are_not_restated_under_the_plot():
+    html = render(_view())
+    assert "aligned reads &times;" not in html
+    assert "Top fraction" not in html
+
+
+def test_a_single_group_gets_no_separate_header():
+    html = render(_view(groups=[PileupGroup("only-ref", "ACGT", [])]))
+    assert '<div class="sv-group-head">' not in html
+    assert '<span class="sv-name">only-ref' in html
+
+
+def test_several_groups_each_get_their_own_header():
+    ref = "ACGT"
+    html = render(_view(groups=[PileupGroup("a", ref, []), PileupGroup("b", ref, [])]))
+    assert html.count('<div class="sv-group-head">') == 2
+
+
+def test_a_title_that_only_restates_the_group_name_is_not_repeated():
+    html = render(_view(groups=[PileupGroup("puc19", "ACGT", [])],
+                        title="Pileup: puc19"))
+    assert 'class="sv-eyebrow"' not in html
+
+
+def test_shared_reference_geometry_is_stated_once_across_groups():
+    """bp and insert span describe the reference, not a group, so several groups
+    over one reference state them in the masthead rather than in each header.
+    """
+    ref = "ACGT" * 25
+    html = render(_view(groups=[PileupGroup("a", ref, []), PileupGroup("b", ref, [])],
+                        flanks=(10, 10)))
+    assert html.count("insert <b>11</b>&ndash;<b>90</b>") == 1
+    assert html.count("</b> bp") == 1
+
+
+def test_groups_over_different_references_keep_their_own_geometry():
+    html = render(_view(groups=[PileupGroup("a", "ACGT" * 25, []),
+                                PileupGroup("b", "ACGT" * 30, [])]))
+    assert html.count("</b> bp") == 2
+
+
+def test_the_star_is_defined_rather_than_restated():
+    """The star already marks the group inline; repeating the name adds nothing,
+    but the label explaining what the star means was previously missing.
+    """
+    html = render(_view(groups=[PileupGroup("g", "ACGT", [], highlighted=True)],
+                        highlight_ids=["g"], highlight_label="Recoverable"))
+    assert "&#9733;</span> = Recoverable" in html
+    assert "Recoverable: g" not in html
+
+
+def test_a_title_that_adds_information_is_kept():
+    html = render(_view(groups=[PileupGroup("puc19", "ACGT", [])],
+                        title="Plate 3 well A1"))
+    assert 'class="sv-eyebrow"' in html
+    assert "Plate 3 well A1" in html
+
+
+# --- Verdict chips --------------------------------------------------------
+
+def _chip_html(status, **kwargs):
+    return render(_view(groups=[PileupGroup("g", "ACGT", [], status=status, **kwargs)]))
+
+
+def test_a_blank_status_renders_no_chip():
+    assert '<span class="sv-chip' not in _chip_html("")
+
+
+def test_an_unrecognised_status_is_not_drawn_as_a_failure():
+    """A caller reporting something the renderer has no opinion about used to
+    fall through to the error colour, so every group from a driver that passed
+    a constant like "Aligned" printed in alarm red.
+    """
+    html = _chip_html("Aligned")
+    assert 'class="sv-chip sv-chip-neutral"' in html
+    assert "sv-chip-bad" not in html.split("</style>")[1]
+
+
+def test_a_mismatch_status_is_drawn_as_a_failure():
+    assert 'class="sv-chip sv-chip-bad"' in _chip_html("Mismatch")
+
+
+def test_perfect_match_outranks_the_mismatch_needle():
+    """"Perfect Match" contains "match"; "Mismatch" must not win on it."""
+    assert 'class="sv-chip sv-chip-ok"' in _chip_html("Perfect Match")
+
+
+def test_a_silent_mutation_is_drawn_as_a_warning():
+    assert 'class="sv-chip sv-chip-warn"' in _chip_html("Silent Mutation")
+
+
+def test_the_verdict_carries_a_glyph_as_well_as_a_colour():
+    """Colour alone fails for colourblind readers and in print."""
+    assert "&#9733;" not in _chip_html("Mismatch")
+    assert "▲" in _chip_html("Mismatch")
+    assert "●" in _chip_html("Perfect Match")
 
 
 def test_translation_track_is_drawn_only_when_an_insert_is_known():
@@ -100,6 +244,40 @@ def test_translation_track_is_drawn_only_when_an_insert_is_known():
     with_flanks = render(_view(flanks=(10, 10)))
     assert "var flanks=[10,10];" in with_flanks
     assert "var refAA=null;" not in with_flanks
+
+
+def test_translation_is_suppressed_when_the_view_asks_for_none():
+    """A focus region worth marking is not always a reading frame worth
+    translating — a vector's payload can be one without being the other — so the
+    protein readout is its own flag rather than a consequence of `flanks`.
+    """
+    html = render(_view(flanks=(10, 10), translate=False))
+    assert "var refAA=null;" in html
+    assert "var consAA=null;" in html
+    # The focus region still gets its boundary lines.
+    assert "var flanks=[10,10];" in html
+
+
+def test_translation_is_drawn_by_default_when_a_focus_region_exists():
+    html = render(_view(flanks=(10, 10)))
+    assert "var refAA=null;" not in html
+
+
+def test_asking_for_a_translation_without_a_focus_region_draws_none():
+    """There is nowhere to place amino-acid rows without a region to translate."""
+    html = render(_view(translate=True))
+    assert "var refAA=null;" in html
+
+
+def test_the_translation_flag_does_not_disturb_the_reads():
+    """Guards the refactor: the consensus reconstruction moved inside the flag."""
+    ref = "ACGT" * 25
+    rows = [[(b, True) for b in ref]]
+    on = render(_view(groups=[PileupGroup("g", ref, rows)], flanks=(10, 10)))
+    off = render(_view(groups=[PileupGroup("g", ref, rows)], flanks=(10, 10),
+                       translate=False))
+    assert '"' + "." * 100 + '"' in on
+    assert '"' + "." * 100 + '"' in off
 
 
 def test_reads_are_encoded_compactly():
