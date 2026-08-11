@@ -33,10 +33,16 @@ class Feature:
     """One annotated region on a reference, kept as a plain record.
 
     ``[start, end)`` is a half-open span on the reference as stored.  ``strand``
-    is 1, -1, or None.  ``wraps_origin`` marks a feature stored in several parts
-    because it crosses base 1 of a circular construct, which means its real
-    extent is not ``[start, end)`` and callers should refuse it rather than read
-    it as one stretch.
+    is 1, -1, or None.  ``wraps_origin`` marks a feature that crosses base 1 of a
+    circular construct; such a feature is stored with ``start > end``, because
+    the span from its 5' piece's start to its 3' piece's end is the only pair
+    that preserves its real extent.  Read those with
+    :func:`seqviewer.genbank.feature_spans`, which returns the one or two
+    drawable spans and clips them to a reference length.
+
+    ``color`` is the colour a human chose in SnapGene or ApE, when the file
+    carried one.  It is a presentation hint rather than data: a renderer is free
+    to adjust it for contrast, and to fall back to its own palette when None.
     """
 
     type: str
@@ -45,8 +51,14 @@ class Feature:
     strand: Optional[int] = None
     label: Optional[str] = None
     wraps_origin: bool = False
+    color: Optional[str] = None
 
     def __len__(self) -> int:
+        """Bases spanned; 0 for an origin-crossing feature, which has no single span.
+
+        Use :func:`seqviewer.genbank.feature_spans` to size a wrapping feature —
+        ``end - start`` is negative for one and this clamps it to zero.
+        """
         return max(0, self.end - self.start)
 
 
@@ -136,6 +148,17 @@ class PileupView:
     ``highlight_label`` is the word used to introduce them — "Recoverable" in a
     streak-out report, something else elsewhere.  Groups whose ``highlighted``
     flag is set get a star next to their name.
+
+    ``features`` are drawn as an annotation track over the reference bar.
+    ``ref_len`` is the length they are stated against, which is what lets a page
+    whose groups have different reference lengths drop the annotations that do
+    not apply rather than drawing them off the end.
+
+    ``flanks`` remains the focus region: the one feature whose edges are worth
+    dashed boundary lines through the full height of the pileup, and the window
+    the amino-acid track translates.  It is None when no feature was singled
+    out, and then the page draws neither — an annotated plasmid with no
+    designated insert gets its features and nothing else.
     """
 
     title: str
@@ -145,6 +168,8 @@ class PileupView:
     highlight_ids: List[str] = field(default_factory=list)
     highlight_label: str = "Highlighted"
     flanks: Optional[Tuple[int, int]] = None
+    features: List[Feature] = field(default_factory=list)
+    ref_len: Optional[int] = None
     theme: Theme = field(default_factory=Theme)
 
     @classmethod
@@ -156,10 +181,17 @@ class PileupView:
         insert_type: str = "insert",
         **kwargs,
     ) -> "PileupView":
-        """Build a view whose flanks come from *reference*'s annotated insert."""
+        """Build a view from *reference*: its features, length, and focus region.
+
+        The focus region comes from a feature of *insert_type*; when the
+        reference has none, ``flanks`` is None and the page draws no boundary
+        lines and no translation.
+        """
         return cls(
             title=title,
             groups=list(groups),
             flanks=reference.flank_lengths(insert_type),
+            features=list(reference.features),
+            ref_len=len(reference),
             **kwargs,
         )

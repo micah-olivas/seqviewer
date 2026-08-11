@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -100,12 +101,35 @@ def test_flanks_name_the_insert_span_once():
 def test_swatches_and_canvas_read_one_palette():
     """The legend used to hardcode light-mode hexes while the canvas swapped
     palettes in JS, so in dark mode a swatch could contradict the cell it
-    described.  Both now read one table emitted from Python.
+    described.
+
+    Asserted as the invariant — every colour the canvas fills with equals the
+    custom property the matching swatch reads, in both themes — rather than on
+    the shape of the emission, so reshaping the JS cannot make this pass while
+    the two silently drift apart.
     """
-    html = render(_view())
-    assert "var SV_PALETTE = " in html
-    assert "background:var(--cv-a);" in html
-    assert "{'A': P.a, 'T': P.t, 'C': P.c, 'G': P.g}" in html
+    html = render(_view(flanks=(10, 10)))
+
+    payload = re.search(r"var SV_PALETTE = (\{.*?\});", html, re.S)
+    assert payload, "the page emits no palette for the canvas"
+    canvas = json.loads(payload.group(1))
+
+    def custom_properties(selector):
+        block = html.split(selector, 1)[1].split("}", 1)[0]
+        return dict(re.findall(r"--cv-([a-z-]+):\s*([^;]+);", block))
+
+    for theme, selector in (("light", ":root {"), ("dark", '[data-theme="dark"] {')):
+        declared = custom_properties(selector)
+        for key, value in canvas[theme].items():
+            assert declared.get(key) == value, (
+                f"{theme} {key}: swatch reads {declared.get(key)!r}, "
+                f"canvas fills {value!r}"
+            )
+
+    # And the swatches read those properties rather than carrying literals.
+    swatches = re.findall(r'class="sv-sw"[^>]*style="background:([^;"]+)', html)
+    assert swatches, "no swatches rendered"
+    assert all(value.startswith("var(--cv-") for value in swatches), swatches
 
 
 def test_text_and_plot_share_one_left_edge():
