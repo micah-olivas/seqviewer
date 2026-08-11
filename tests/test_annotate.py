@@ -130,6 +130,25 @@ def test_a_wrapping_feature_is_drawn_in_two_pieces_on_one_lane():
     assert plan.lanes == 1
 
 
+def test_a_wrapping_feature_does_not_block_the_middle_of_its_lane():
+    """Judged by the hull between its first and last base, a feature crossing the
+    origin spans the whole reference and costs a lane for a middle it never
+    touches.  Judged by its real spans it occupies only the two ends.
+    """
+    wrapper = Feature("misc_feature", start=900, end=100, label="ends",
+                      wraps_origin=True)
+    plan = plan_track([wrapper, _f(400, 600, label="middle")], 1000)
+    assert plan.lanes == 1
+    assert {g.lane for g in plan.glyphs} == {0}
+
+
+def test_a_wrapping_feature_still_excludes_what_it_does_overlap():
+    wrapper = Feature("misc_feature", start=900, end=100, label="ends",
+                      wraps_origin=True)
+    plan = plan_track([wrapper, _f(50, 300, label="clashes")], 1000)
+    assert plan.lanes == 2
+
+
 def test_a_wrapping_feature_carries_one_label_not_two():
     wrapper = Feature("misc_feature", start=900, end=100, label="span",
                       wraps_origin=True)

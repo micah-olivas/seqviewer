@@ -234,25 +234,38 @@ class _Entry:
         return sum(e - s for s, e in self.spans)
 
 
+def _clear(spans: Sequence[Tuple[float, float]],
+           occupied: Sequence[Tuple[float, float]]) -> bool:
+    """True when none of *spans* comes within :data:`_GAP` of *occupied*."""
+    for start, end in spans:
+        for taken_start, taken_end in occupied:
+            if start < taken_end + _GAP and taken_start < end + _GAP:
+                return False
+    return True
+
+
 def _assign_lanes(entries: Sequence[_Entry]) -> int:
     """Greedy first-fit; sets ``lane`` on each entry and returns lanes used.
+
+    Fitting tests each of an entry's real spans rather than the hull between its
+    first and last.  That matters for a feature crossing the origin, which
+    occupies only the two ends of the reference: judged by its hull it would
+    block a whole lane across a middle it does not touch.
 
     *entries* must already be in start order, which is what makes first-fit
     optimal here rather than merely reasonable.
     """
-    lane_ends: List[float] = []
+    lanes: List[List[Tuple[float, float]]] = []
     for entry in entries:
-        placed = False
-        for index, end in enumerate(lane_ends):
-            if entry.left >= end:
+        for index, occupied in enumerate(lanes):
+            if _clear(entry.spans, occupied):
                 entry.lane = index
-                lane_ends[index] = entry.right + _GAP
-                placed = True
+                occupied.extend(entry.spans)
                 break
-        if not placed:
-            entry.lane = len(lane_ends)
-            lane_ends.append(entry.right + _GAP)
-    return len(lane_ends)
+        else:
+            entry.lane = len(lanes)
+            lanes.append(list(entry.spans))
+    return len(lanes)
 
 
 def _lanes_needed(entries: Sequence[_Entry]) -> int:
