@@ -21,8 +21,9 @@ from .genbank import feature_spans
 from .model import Feature
 
 __all__ = [
-    "cell_width", "plan_track", "track_svg", "TrackPlan", "Glyph",
-    "LANE_HEIGHT", "FEATURE_PALETTE",
+    "cell_width", "plan_track", "track_svg", "track_style", "TrackPlan", "Glyph",
+    "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
+    "feature_colors", "outline_color", "label_color", "palette_key",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -91,7 +92,13 @@ def cell_width(n_cols: int) -> int:
     return 2
 
 
-def _palette_key(feature_type: str) -> str:
+def palette_key(feature_type: str) -> str:
+    """Map a GenBank feature type onto a :data:`FEATURE_PALETTE` key.
+
+    Public because a second view over the same references should reach the same
+    colour for the same feature type; two independent type maps would drift the
+    way the legend and the canvas once did.
+    """
     return _TYPE_KEYS.get(feature_type.strip().lower(), "other")
 
 
@@ -120,7 +127,7 @@ def _mix(color: str, target: Sequence[int], amount: float) -> str:
     return _hex([c + (t - c) * amount for c, t in zip(_rgb(color), target)])
 
 
-def _outline(color: str) -> str:
+def outline_color(color: str) -> str:
     """A darker edge for *color*, so a fill near the page ground still has shape."""
     return _mix(color, (0, 0, 0), 0.35)
 
@@ -138,9 +145,25 @@ def _for_dark(color: str) -> str:
     return _mix(color, (255, 255, 255), 0.45)
 
 
-def _text_on(color: str) -> str:
+def label_color(color: str) -> str:
     """Black or white, whichever the fill can carry."""
     return "#111111" if _luminance(color) >= 0.55 else "#ffffff"
+
+
+def feature_colors(feature: Feature) -> Tuple[str, str]:
+    """Return ``(light, dark)`` fills for *feature*.
+
+    A colour the file carried always wins — that is the user's own choice, made
+    in SnapGene or ApE — and a feature with none falls back on its type.  The
+    dark value is lifted where a colour chosen against white would disappear
+    against the dark ground, keeping its hue.
+
+    Public so that any other view drawing these same features reaches the same
+    two colours without reimplementing the rule.
+    """
+    if feature.color:
+        return feature.color, _for_dark(feature.color)
+    return FEATURE_PALETTE[palette_key(feature.type)]
 
 
 @dataclass
@@ -184,6 +207,85 @@ class TrackPlan:
         return self.lanes * LANE_HEIGHT + (self.lanes - 1) * LANE_GAP
 
 
+#: Minimum visible seam between two glyphs in a lane, in pixels.  Measured in
+#: pixels and not bases because at 2px per base an adjacent feature would share
+#: an edge and read as one shape.
+_GAP = 3.0
+
+
+@dataclass
+class _Entry:
+    """A feature and its pixel spans, mid-layout."""
+
+    feature: Feature
+    spans: List[Tuple[float, float]]
+    lane: int = 0
+
+    @property
+    def left(self) -> float:
+        return min(s for s, _ in self.spans)
+
+    @property
+    def right(self) -> float:
+        return max(e for _, e in self.spans)
+
+    @property
+    def covered(self) -> float:
+        return sum(e - s for s, e in self.spans)
+
+
+def _assign_lanes(entries: Sequence[_Entry]) -> int:
+    """Greedy first-fit; sets ``lane`` on each entry and returns lanes used.
+
+    *entries* must already be in start order, which is what makes first-fit
+    optimal here rather than merely reasonable.
+    """
+    lane_ends: List[float] = []
+    for entry in entries:
+        placed = False
+        for index, end in enumerate(lane_ends):
+            if entry.left >= end:
+                entry.lane = index
+                lane_ends[index] = entry.right + _GAP
+                placed = True
+                break
+        if not placed:
+            entry.lane = len(lane_ends)
+            lane_ends.append(entry.right + _GAP)
+    return len(lane_ends)
+
+
+def _lanes_needed(entries: Sequence[_Entry]) -> int:
+    ordered = sorted(entries, key=lambda e: (e.left, -e.covered))
+    return _assign_lanes(ordered)
+
+
+def _select(entries: List[_Entry], max_lanes: int) -> Tuple[List[_Entry], List[Feature]]:
+    """Choose which entries get drawn, keeping the most informative.
+
+    Features are offered in order of type priority and then decreasing width, and
+    each is kept only if the set still fits.  So a reading frame beats the dozen
+    binding sites inside it, and the page height stays fixed no matter how
+    heavily a file is annotated.
+    """
+    if _lanes_needed(entries) <= max_lanes:
+        return list(entries), []
+
+    ranked = sorted(entries, key=lambda e: (
+        _TYPE_PRIORITY.get(palette_key(e.feature.type), 3),
+        -e.covered,
+        e.left,
+    ))
+    keep: List[_Entry] = []
+    dropped: List[Feature] = []
+    for entry in ranked:
+        if _lanes_needed(keep + [entry]) <= max_lanes:
+            keep.append(entry)
+        else:
+            dropped.append(entry.feature)
+    return keep, dropped
+
+
 def _describe(feature: Feature, ref_len: int, pieces: int) -> str:
     """Tooltip text: what it is, where it is, and which way it points."""
     arrow = {1: " →", -1: " ←"}.get(feature.strand, "")
@@ -209,61 +311,37 @@ def plan_track(
 
     Packing is greedy first-fit over features sorted by start, which is optimal
     for interval graphs, with ties broken by descending length so the longest
-    feature of a cluster takes the top lane.  A feature that will not fit within
-    *max_lanes* is dropped rather than silently growing the page, and comes back
-    in :attr:`TrackPlan.dropped` so the caller can say so.
+    feature of a cluster takes the top lane.
+
+    When the features will not fit in *max_lanes*, the page does not grow: the
+    least informative are dropped instead, by feature type and then by width, so
+    a crowd of binding sites gives way to the reading frame it sits in rather
+    than whichever feature happened to be packed last.  They come back in
+    :attr:`TrackPlan.dropped` so the caller can say what was left out.
     """
     if cell_w is None:
         cell_w = cell_width(ref_len)
     width = ref_len * cell_w
 
-    # Each feature becomes one or two spans: two when it crosses the origin.
-    entries = []
+    # Each feature becomes one or two pixel spans: two when it crosses the origin.
+    entries: List[_Entry] = []
     for feature in features:
         spans = feature_spans(feature, ref_len)
         if not spans:
             continue
-        entries.append((feature, spans))
+        entries.append(_Entry(
+            feature=feature,
+            spans=[(s * cell_w, e * cell_w) for s, e in spans],
+        ))
 
-    entries.sort(key=lambda e: (
-        min(s for s, _ in e[1]),
-        -sum(end - s for s, end in e[1]),
-    ))
+    keep, dropped = _select(entries, max_lanes)
+    keep.sort(key=lambda e: (e.left, -e.covered))
+    lanes = _assign_lanes(keep)
 
-    # A gap in pixels rather than bases: at 2px per base, a one-base gap is not
-    # a visible seam between two glyphs.
-    gap_px = 3.0
-    lane_ends: List[float] = []
     glyphs: List[Glyph] = []
-    dropped: List[Feature] = []
-    style_index = 0
-
-    for feature, spans in entries:
-        pixel_spans = [(s * cell_w, e * cell_w) for s, e in spans]
-        left = min(s for s, _ in pixel_spans)
-        right = max(e for _, e in pixel_spans)
-
-        lane = None
-        for index, end in enumerate(lane_ends):
-            if left >= end:
-                lane = index
-                break
-        if lane is None:
-            if len(lane_ends) < max_lanes:
-                lane_ends.append(0.0)
-                lane = len(lane_ends) - 1
-            else:
-                dropped.append(feature)
-                continue
-        lane_ends[lane] = right + gap_px
-
-        key = _palette_key(feature.type)
-        fallback_light, fallback_dark = FEATURE_PALETTE[key]
-        if feature.color:
-            fill_light = feature.color
-            fill_dark = _for_dark(feature.color)
-        else:
-            fill_light, fill_dark = fallback_light, fallback_dark
+    for style_index, entry in enumerate(keep):
+        feature, pixel_spans, lane = entry.feature, entry.spans, entry.lane
+        fill_light, fill_dark = feature_colors(feature)
 
         label = feature.label or feature.type
         title = _describe(feature, ref_len, len(pixel_spans))
@@ -287,11 +365,9 @@ def plan_track(
                 title=title,
                 style_index=style_index,
             ))
-        style_index += 1
 
     _place_labels(glyphs, width)
-    return TrackPlan(glyphs=glyphs, lanes=len(lane_ends), dropped=dropped,
-                     width=width)
+    return TrackPlan(glyphs=glyphs, lanes=lanes, dropped=dropped, width=width)
 
 
 def _place_labels(glyphs: List[Glyph], width: float) -> None:
@@ -366,13 +442,13 @@ def track_style(plan: TrackPlan, prefix: str = "svf") -> str:
     for index, glyph in sorted(seen.items()):
         light, dark = glyph.fill_light, glyph.fill_dark
         lines.append(
-            f".{prefix}{index}{{fill:{light};stroke:{_outline(light)}}}"
-            f".{prefix}t{index}{{fill:{_text_on(light)}}}"
+            f".{prefix}{index}{{fill:{light};stroke:{outline_color(light)}}}"
+            f".{prefix}t{index}{{fill:{label_color(light)}}}"
         )
         lines.append(
             f'[data-theme="dark"] .{prefix}{index}'
-            f"{{fill:{dark};stroke:{_outline(dark)}}}"
-            f'[data-theme="dark"] .{prefix}t{index}{{fill:{_text_on(dark)}}}'
+            f"{{fill:{dark};stroke:{outline_color(dark)}}}"
+            f'[data-theme="dark"] .{prefix}t{index}{{fill:{label_color(dark)}}}'
         )
     return "\n".join(lines)
 

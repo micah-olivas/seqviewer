@@ -71,6 +71,36 @@ def test_features_beyond_the_lane_limit_are_dropped_and_reported():
     assert len(plan.dropped) == 3
 
 
+def test_overflow_drops_the_least_informative_feature_not_the_last_packed():
+    """A crowd of binding sites should give way to the reading frame it sits in,
+    rather than to whichever feature happened to be packed last.
+    """
+    plan = plan_track([
+        _f(0, 900, type="protein_bind", label="site-a"),
+        _f(0, 900, type="protein_bind", label="site-b"),
+        _f(0, 800, type="CDS", label="orf"),
+    ], 1000, max_lanes=1)
+    assert [g.feature.label for g in plan.glyphs] == ["orf"]
+    assert {f.label for f in plan.dropped} == {"site-a", "site-b"}
+
+
+def test_among_features_of_equal_standing_the_wider_one_is_kept():
+    plan = plan_track([
+        _f(0, 100, type="CDS", label="small"),
+        _f(0, 900, type="CDS", label="big"),
+    ], 1000, max_lanes=1)
+    assert [g.feature.label for g in plan.glyphs] == ["big"]
+
+
+def test_nothing_is_dropped_when_everything_fits():
+    plan = plan_track([
+        _f(0, 100, type="protein_bind", label="a"),
+        _f(200, 300, type="protein_bind", label="b"),
+    ], 1000, max_lanes=1)
+    assert plan.dropped == []
+    assert len(plan.glyphs) == 2
+
+
 def test_a_feature_outside_the_reference_is_not_placed_at_all():
     """Groups may have shorter references than the view's features describe."""
     plan = plan_track([_f(2000, 2400, label="far")], 1000)
