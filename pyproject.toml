@@ -16,9 +16,15 @@ dependencies = []
 sam = ["pysam>=0.20"]
 # Aligning raw reads first. Also needs minimap2 and samtools on PATH.
 align = ["pysam>=0.20"]
-# Reading an annotated reference (GenBank, SnapGene) in scripts/pileup.py.
+# Reading an annotated reference (GenBank, SnapGene).
 annot = ["biopython>=1.80"]
+# Everything the seqviewer-pileup command needs: it aligns reads and reads an
+# annotated reference, so it is align plus annot under one name.
+cli = ["pysam>=0.20", "biopython>=1.80"]
 dev = ["pytest>=7", "biopython>=1.80"]
+
+[project.scripts]
+seqviewer-pileup = "seqviewer.cli:main"
 
 [build-system]
 requires = ["hatchling"]

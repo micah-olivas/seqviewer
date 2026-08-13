@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-"""Align a FASTQ to a reference and write a seqviewer pileup page.
+"""Align reads to a reference and write a seqviewer pileup page.
 
-    pileup.py reads.fastq reference out.html [options]
+    seqviewer-pileup reads/ reference out.html [options]
+
+Reads are a directory of FASTQs or a single file.  A sequencing run arrives as a
+directory of per-barcode files, so a directory is the expected input; its files
+are pooled into one pileup unless ``--per-file`` asks for a group each.
 
 Reading the reference is :mod:`seqviewer.genbank`'s job — FASTA, GenBank, ApE,
 and SnapGene all arrive as a ``Reference`` with its topology and features.  What
@@ -21,9 +25,28 @@ import gzip
 import sys
 from pathlib import Path
 
-from seqviewer import PileupGroup, PileupView, render
-from seqviewer.align import Read, grid_from_reads
-from seqviewer.genbank import load_reference
+from .align import Read, grid_from_reads
+from .genbank import load_reference
+from .pileup import PileupGroup, PileupView
+from .render import render
+
+FASTQ_SUFFIXES = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
+
+
+def fastq_paths(path):
+    """The FASTQs at *path*: a directory's files, or the one file named.
+
+    Naming a single file is the same code path with a one-element list.  Hidden
+    files are skipped, which is what keeps the ``._`` stubs a cloud-synced share
+    leaves behind from being read as reads.
+    """
+    path = Path(path)
+    if not path.is_dir():
+        return [path] if path.exists() else []
+    return sorted(p for p in path.iterdir()
+                  if p.is_file()
+                  and not p.name.startswith(".")
+                  and p.name.endswith(FASTQ_SUFFIXES))
 
 
 def read_fastq(path, name_contains=None, limit=None, min_len=0):
@@ -46,6 +69,36 @@ def read_fastq(path, name_contains=None, limit=None, min_len=0):
             out.append(Read(name, seq, qual or None))
             if limit and len(out) >= limit:
                 break
+    return out
+
+
+def collect_samples(paths, name_contains=None, limit=None, min_len=0, pooled=True):
+    """Read *paths* into the ``(label, reads)`` pairs the groups are built from.
+
+    Pooled, every file's reads land in one list and the page draws a single
+    pileup; per-file, each file becomes its own group so the samples can be read
+    side by side.  A label of None means the group is named for the reference
+    rather than for a file, which is what pooling leaves it with.
+
+    A cap counts against the pool in the first case and against each file in the
+    second, so ``--max`` bounds what one group draws either way.
+    """
+    if pooled:
+        pool = []
+        for path in paths:
+            remaining = None if limit is None else limit - len(pool)
+            if remaining is not None and remaining <= 0:
+                break
+            pool.extend(read_fastq(path, name_contains, remaining, min_len))
+        return [(None, pool)] if pool else []
+
+    out = []
+    for path in paths:
+        reads = read_fastq(path, name_contains, limit, min_len)
+        if reads:
+            out.append((path.stem, reads))
+        else:
+            print(f"no reads matched in {path.name}", file=sys.stderr)
     return out
 
 
@@ -144,7 +197,9 @@ def focus_flanks(reference, label):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("fastq")
+    parser.add_argument("reads",
+                        help="a directory of FASTQs, pooled into one pileup, or "
+                             "a single FASTQ; .gz is read directly")
     parser.add_argument("reference",
                         help="FASTA, GenBank (.gb/.gbk/.ape), or SnapGene (.dna); "
                              "the annotated formats need biopython")
@@ -155,8 +210,13 @@ def main(argv=None):
                              "shows the Golden Gate junctions on an amplicon; "
                              "pass '' to keep every feature the file declares")
     parser.add_argument("out", help="HTML page to write")
+    parser.add_argument("--per-file", action="store_true",
+                        help="draw one group per FASTQ instead of pooling the "
+                             "directory into a single pileup")
     parser.add_argument("--name", help="keep only reads whose name contains this")
-    parser.add_argument("--max", type=int, help="cap on reads drawn")
+    parser.add_argument("--max", type=int,
+                        help="cap on the reads read into each group, taken in "
+                             "file order rather than sampled across the files")
     parser.add_argument("--min-read-len", type=int, default=0,
                         help="drop reads shorter than this before aligning")
     parser.add_argument("--insert", help="feature label to derive flanks from")
@@ -181,11 +241,21 @@ def main(argv=None):
     print(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
           f"{len(reference.features)} features")
 
-    reads = read_fastq(args.fastq, args.name, args.max, args.min_read_len)
-    if not reads:
-        print(f"no reads matched in {args.fastq}", file=sys.stderr)
+    paths = fastq_paths(args.reads)
+    if not paths:
+        print(f"no FASTQ files at {args.reads}", file=sys.stderr)
         return 1
-    print(f"{len(reads)} reads to align")
+    print(f"{len(paths)} FASTQ file{'s' if len(paths) != 1 else ''}: "
+          + ", ".join(p.name for p in paths))
+
+    samples = collect_samples(paths, args.name, args.max, args.min_read_len,
+                              pooled=not args.per_file)
+    if not samples:
+        print(f"no reads matched in {args.reads}", file=sys.stderr)
+        return 1
+    total_reads = sum(len(reads) for _, reads in samples)
+    print(f"{total_reads} reads to align in {len(samples)} "
+          f"group{'s' if len(samples) != 1 else ''}, ordered by {args.order}")
 
     # A circular reference is aligned against two copies of itself so that reads
     # crossing the origin stay in one piece, then folded back to one copy.
@@ -196,34 +266,42 @@ def main(argv=None):
     if circular:
         print("circular: aligning against a doubled reference, then folding")
 
-    rows = grid_from_reads(reads, fasta, align_seq,
-                           min_overlap_pos=args.min_overlap_pos)
-    if not rows:
+    groups = []
+    for label, reads in samples:
+        name = label or reference.name
+        rows = grid_from_reads(reads, fasta, align_seq,
+                               min_overlap_pos=args.min_overlap_pos)
+        if not rows:
+            # One empty sample is not a failed run: the rest still draw.
+            print(f"{name}: nothing aligned", file=sys.stderr)
+            continue
+        if circular:
+            rows = [fold(row, len(reference)) for row in rows]
+        # grid_from_reads has already clustered by mismatch pattern; reorder
+        # unless that is what was asked for.
+        rows = ORDERINGS[args.order](rows)
+        covered = sum(1 for i in range(len(reference))
+                      if any(row[i][0] != "-" for row in rows))
+        print(f"{name}: {len(rows)} of {len(reads)} reads drawn "
+              f"({len(rows) / len(reads):.0%}), {covered} of {len(reference)} "
+              f"positions covered ({covered / len(reference):.0%})")
+        # No status: it is a consensus call, and this driver has no consensus to
+        # report.  A constant string here would be styled as one and say nothing.
+        groups.append(PileupGroup(name=name, ref_seq=reference.seq, rows=rows,
+                                  n_reads=len(rows),
+                                  fraction=len(rows) / total_reads))
+
+    if not groups:
         print("nothing aligned", file=sys.stderr)
         return 1
-    if circular:
-        rows = [fold(row, len(reference)) for row in rows]
-    # grid_from_reads has already clustered by mismatch pattern; reorder unless
-    # that is what was asked for.
-    rows = ORDERINGS[args.order](rows)
-    print(f"{len(rows)} of {len(reads)} reads drawn "
-          f"({len(rows) / len(reads):.0%}), ordered by {args.order}")
-    covered = sum(1 for i in range(len(reference))
-                  if any(row[i][0] != "-" for row in rows))
-    print(f"{covered} of {len(reference)} reference positions covered "
-          f"({covered / len(reference):.0%})")
 
-    # No status: it is a consensus call, and this driver has no consensus to
-    # report.  A constant string here would be styled as one and say nothing.
-    group = PileupGroup(name=reference.name, ref_seq=reference.seq, rows=rows,
-                        n_reads=len(rows), fraction=len(rows) / len(reads))
     title = args.title or f"Pileup: {reference.name}"
     # Built directly rather than through PileupView.from_reference so that the
     # focus region comes from --insert by label, rather than from a feature the
     # file happens to have typed "insert".  Everything else from_reference would
     # carry across still has to be carried.
     view = PileupView(
-        title=title, groups=[group], total_reads=len(reads),
+        title=title, groups=groups, total_reads=total_reads,
         flanks=focus_flanks(reference, args.insert),
         features=reference.features,
         ref_len=len(reference),

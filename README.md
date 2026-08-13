@@ -20,10 +20,12 @@ also needs `minimap2` and `samtools` on PATH.
 pip install -e .            # render only
 pip install -e '.[sam]'     # + read SAM/BAM
 pip install -e '.[align]'   # + align reads first
+pip install -e '.[cli]'     # + the seqviewer-pileup command
 ```
 
 The package is private and not on an index. Install it editable from a local
-checkout.
+checkout. With uv, no install step is needed: `uv run` builds the project into
+its own environment first, so the commands below work in a fresh clone.
 
 ## Input levels
 
@@ -80,6 +82,30 @@ To see a page without reads or an aligner:
 ```bash
 python -m seqviewer.demo demo.html
 ```
+
+## Command line
+
+`seqviewer-pileup` aligns reads to a reference and writes a page. It takes a
+directory of FASTQs, which is how a sequencing run arrives:
+
+```bash
+uv run --extra cli seqviewer-pileup reads/ reference.dna pileup.html
+```
+
+The directory's files are pooled into one pileup; `--per-file` draws a group per
+file instead, so samples can be compared on one page. A single FASTQ still works
+in place of the directory, and `.gz` is read directly. The reference is FASTA,
+GenBank, ApE, or SnapGene.
+
+`--extra cli` covers what the command needs beyond the core: pysam to read the
+alignment and biopython to read an annotated reference. `minimap2` and
+`samtools` still have to be on PATH. Without uv, run the same thing as
+`python -m seqviewer.cli`.
+
+Worth knowing: `--max` caps the reads read into each group, taken in file order
+rather than sampled across the files, and `--insert LABEL` marks a feature as
+the focus region, which is what draws the boundary lines and the translation
+rows. `--help` lists the rest.
 
 ## Reference and Feature
 
