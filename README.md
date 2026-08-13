@@ -102,6 +102,19 @@ alignment and biopython to read an annotated reference. `minimap2` and
 `samtools` still have to be on PATH. Without uv, run the same thing as
 `python -m seqviewer.cli`.
 
+That form has to be run from a checkout. To get the command on PATH and run it
+from wherever the reads are:
+
+```bash
+uv tool install --python 3.13 --editable '/path/to/seqviewer[cli]'
+seqviewer-pileup reads/ reference.dna pileup.html      # from anywhere
+```
+
+Editable, so the installed command tracks the checkout and a `git pull` is the
+whole upgrade. The Python has to be named: `uv tool install` otherwise takes the
+default interpreter, and a conda base of 3.8 does not satisfy this package's
+`requires-python`. `uv tool uninstall seqviewer` undoes it.
+
 A page draws 500 reads by default, sampled uniformly from across the whole of
 every file. A row costs roughly 2 KB of HTML, so a 35,000-read pool drawn whole
 is a 70 MB page — too large to open, and no more readable for holding every
