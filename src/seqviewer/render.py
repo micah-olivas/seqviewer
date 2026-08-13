@@ -55,8 +55,8 @@ def _asset(name: str, substitutions=None) -> str:
 #: JS object, so a swatch can no longer disagree with the cell it describes.
 _PALETTE = {
     "light": {
-        "match": "#c8ccd0",
-        "vector": "#dfe2e6",
+        "match": "#d4d8dc",
+        "vector": "#e9ebee",
         "gap": "#ffffff",
         "ref": "#1e293b",
         "a": "#e03131",

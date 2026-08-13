@@ -9,7 +9,10 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   // the SVG feature track measures itself with the same number. Recomputing the
   // rule here would let a glyph sit a pixel off the column it describes.
   var cellW = cellWIn;
-  var cellH = nRows < 100 ? 3 : nRows < 400 ? 2 : 1;
+  // A row is thinner the more of them there are, so a deep pileup still fits a
+  // screen. The floor is 2px rather than 1: a one-pixel row is a hairline that
+  // a fractional device pixel ratio can drop altogether.
+  var cellH = nRows < 100 ? 4 : nRows < 400 ? 3 : 2;
   var refH = Math.max(cellH, 6);
   var consH = refH;
   var gap = 4;
