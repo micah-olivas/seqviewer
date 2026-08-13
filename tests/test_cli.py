@@ -47,44 +47,91 @@ def test_pooling_puts_every_file_in_one_group(tmp_path):
     _fastq(tmp_path / "b.fastq")
     samples = collect_samples(fastq_paths(tmp_path))
     assert len(samples) == 1
-    label, reads = samples[0]
+    label, reads, seen = samples[0]
     assert label is None                      # named for the reference, not a file
-    assert len(reads) == 2 * len(READS)
+    assert len(reads) == seen == 2 * len(READS)
 
 
 def test_per_file_gives_one_group_per_file_labelled_by_stem(tmp_path):
     _fastq(tmp_path / "a.fastq")
     _fastq(tmp_path / "b.fastq")
     samples = collect_samples(fastq_paths(tmp_path), pooled=False)
-    assert [label for label, _ in samples] == ["a", "b"]
-    assert all(len(reads) == len(READS) for _, reads in samples)
+    assert [label for label, _, _ in samples] == ["a", "b"]
+    assert all(len(reads) == len(READS) for _, reads, _ in samples)
 
 
 def test_a_cap_bounds_the_pool_not_each_file(tmp_path):
-    """Pooled, --max is what the one group draws, so files stop being read."""
+    """Pooled, --max is what the one group draws, across all the files."""
     _fastq(tmp_path / "a.fastq")
     _fastq(tmp_path / "b.fastq")
-    (_, reads), = collect_samples(fastq_paths(tmp_path), limit=4)
+    (_, reads, seen), = collect_samples(fastq_paths(tmp_path), limit=4)
     assert len(reads) == 4
+    assert seen == 2 * len(READS)             # the depth behind the sample
 
 
 def test_a_cap_bounds_each_group_when_split(tmp_path):
     _fastq(tmp_path / "a.fastq")
     _fastq(tmp_path / "b.fastq")
     samples = collect_samples(fastq_paths(tmp_path), limit=2, pooled=False)
-    assert [len(reads) for _, reads in samples] == [2, 2]
+    assert [len(reads) for _, reads, _ in samples] == [2, 2]
 
 
 def test_a_file_with_no_surviving_reads_drops_out_of_the_split(tmp_path):
     _fastq(tmp_path / "a.fastq")
     _fastq(tmp_path / "b.fastq", [("short", "AC")])
     samples = collect_samples(fastq_paths(tmp_path), min_len=4, pooled=False)
-    assert [label for label, _ in samples] == ["a"]
+    assert [label for label, _, _ in samples] == ["a"]
 
 
 def test_pooling_returns_nothing_when_no_read_survives(tmp_path):
     _fastq(tmp_path / "a.fastq", [("short", "AC")])
     assert collect_samples(fastq_paths(tmp_path), min_len=4) == []
+
+
+def test_a_sample_is_drawn_from_the_whole_file_not_its_front(tmp_path):
+    """The point of sampling: a cap must not degenerate into a head.
+
+    Reads are numbered in file order, so a head of 20 would hold none above 19.
+    A uniform sample of a thousand reaches the end of the file, and its mean sits
+    near the middle rather than near the front.
+    """
+    _fastq(tmp_path / "a.fastq",
+           [(str(i), "ACGT") for i in range(1000)])
+    (_, reads, seen), = collect_samples(fastq_paths(tmp_path), limit=20)
+    positions = sorted(int(r.name) for r in reads)
+    assert len(reads) == 20 and seen == 1000
+    assert positions != list(range(20))       # not the front of the file
+    assert max(positions) > 900               # and it reaches the back
+    assert 300 < sum(positions) / len(positions) < 700
+
+
+def test_pooled_sampling_spans_every_file(tmp_path):
+    """A pool sampled per file would draw one barcode; this draws from both."""
+    _fastq(tmp_path / "a.fastq", [(f"a{i}", "ACGT") for i in range(500)])
+    _fastq(tmp_path / "b.fastq", [(f"b{i}", "ACGT") for i in range(500)])
+    (_, reads, _), = collect_samples(fastq_paths(tmp_path), limit=50)
+    stems = {r.name[0] for r in reads}
+    assert stems == {"a", "b"}
+
+
+def test_a_sample_smaller_than_the_cap_keeps_every_read(tmp_path):
+    _fastq(tmp_path / "a.fastq")
+    (_, reads, seen), = collect_samples(fastq_paths(tmp_path), limit=100)
+    assert len(reads) == seen == len(READS)
+
+
+def test_sampling_the_same_directory_twice_gives_the_same_reads(tmp_path):
+    """The seed is fixed, so a page can be regenerated as it was drawn."""
+    _fastq(tmp_path / "a.fastq", [(str(i), "ACGT") for i in range(200)])
+    first, second = (collect_samples(fastq_paths(tmp_path), limit=10)[0][1]
+                     for _ in range(2))
+    assert [r.name for r in first] == [r.name for r in second]
+
+
+def test_a_falsy_cap_draws_everything(tmp_path):
+    _fastq(tmp_path / "a.fastq", [(str(i), "ACGT") for i in range(50)])
+    (_, reads, seen), = collect_samples(fastq_paths(tmp_path), limit=0)
+    assert len(reads) == seen == 50
 
 
 def test_reads_shorter_than_the_minimum_are_dropped(tmp_path):

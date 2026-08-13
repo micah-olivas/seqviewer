@@ -7,6 +7,10 @@ Reads are a directory of FASTQs or a single file.  A sequencing run arrives as a
 directory of per-barcode files, so a directory is the expected input; its files
 are pooled into one pileup unless ``--per-file`` asks for a group each.
 
+A page draws a few hundred reads by default, sampled from across the whole of
+every file.  A deep run drawn whole is a page too large to open, and the reads
+at the front of one file are not the run; ``--max 0`` draws all of them anyway.
+
 Reading the reference is :mod:`seqviewer.genbank`'s job — FASTA, GenBank, ApE,
 and SnapGene all arrive as a ``Reference`` with its topology and features.  What
 is left here is the part the package does not cover: reading a FASTQ, and the
@@ -22,6 +26,8 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import itertools
+import random
 import sys
 from pathlib import Path
 
@@ -31,6 +37,16 @@ from .pileup import PileupGroup, PileupView
 from .render import render
 
 FASTQ_SUFFIXES = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
+
+# A page is drawn to be read, and a deep run drawn whole is neither readable nor
+# loadable: a row costs roughly 2 KB of HTML, so a 35,000-read pool renders to
+# some 70 MB.  A few hundred reads is what a pileup can actually show, and is
+# enough to see the subpopulations, so that is the default and the whole pile is
+# what has to be asked for.
+DEFAULT_MAX_READS = 500
+
+# Fixed, so the same directory downsamples to the same page twice.
+SAMPLE_SEED = 0
 
 
 def fastq_paths(path):
@@ -49,10 +65,9 @@ def fastq_paths(path):
                   and p.name.endswith(FASTQ_SUFFIXES))
 
 
-def read_fastq(path, name_contains=None, limit=None, min_len=0):
-    """Read a FASTQ, plain or gzipped, into Read records."""
+def iter_fastq(path, name_contains=None, min_len=0):
+    """Stream a FASTQ, plain or gzipped, as Read records."""
     opener = gzip.open if str(path).endswith(".gz") else open
-    out = []
     with opener(path, "rt") as handle:
         while True:
             header = handle.readline()
@@ -66,37 +81,73 @@ def read_fastq(path, name_contains=None, limit=None, min_len=0):
                 continue
             if len(seq) < min_len:
                 continue
-            out.append(Read(name, seq, qual or None))
-            if limit and len(out) >= limit:
-                break
-    return out
+            yield Read(name, seq, qual or None)
+
+
+def read_fastq(path, name_contains=None, limit=None, min_len=0):
+    """Read a FASTQ into Read records, taking the first *limit* if given."""
+    reads = iter_fastq(path, name_contains, min_len)
+    return list(reads if limit is None else itertools.islice(reads, limit))
+
+
+def downsample(reads, k, seed=SAMPLE_SEED):
+    """Take *k* of *reads* uniformly at random, returning ``(kept, seen)``.
+
+    The reads are a stream of unknown length, so this is reservoir sampling: it
+    holds only the k it keeps and makes one pass, which is what lets a run of any
+    depth be capped without reading it into memory first.  Sampling rather than
+    truncating matters for a directory — the first k reads of a pool are the
+    first file's reads, and a page drawn from those is a page of one barcode.
+
+    Every read is kept when there are no more than k of them, and the order the
+    survivors come back in is not the order they were read; rows are sorted
+    afterwards anyway.
+    """
+    kept = []
+    rng = random.Random(seed)
+    seen = 0
+    for seen, read in enumerate(reads, start=1):
+        if len(kept) < k:
+            kept.append(read)
+        else:
+            j = rng.randrange(seen)
+            if j < k:
+                kept[j] = read
+    return kept, seen
+
+
+def _take(reads, limit):
+    """Every read, or a sample of *limit* of them; ``(kept, seen)`` either way."""
+    if not limit:
+        kept = list(reads)
+        return kept, len(kept)
+    return downsample(reads, limit)
 
 
 def collect_samples(paths, name_contains=None, limit=None, min_len=0, pooled=True):
-    """Read *paths* into the ``(label, reads)`` pairs the groups are built from.
+    """Read *paths* into the ``(label, reads, seen)`` triples groups are built from.
 
     Pooled, every file's reads land in one list and the page draws a single
     pileup; per-file, each file becomes its own group so the samples can be read
     side by side.  A label of None means the group is named for the reference
-    rather than for a file, which is what pooling leaves it with.
+    rather than for a file, which is what pooling leaves it with.  ``seen`` is
+    how many reads the group was sampled from, which is the only place the depth
+    behind a downsampled page survives.
 
-    A cap counts against the pool in the first case and against each file in the
-    second, so ``--max`` bounds what one group draws either way.
+    A cap samples the pool in the first case and each file in the second, so it
+    bounds what one group draws either way.  A falsy cap draws everything.
     """
     if pooled:
-        pool = []
-        for path in paths:
-            remaining = None if limit is None else limit - len(pool)
-            if remaining is not None and remaining <= 0:
-                break
-            pool.extend(read_fastq(path, name_contains, remaining, min_len))
-        return [(None, pool)] if pool else []
+        stream = itertools.chain.from_iterable(
+            iter_fastq(path, name_contains, min_len) for path in paths)
+        reads, seen = _take(stream, limit)
+        return [(None, reads, seen)] if reads else []
 
     out = []
     for path in paths:
-        reads = read_fastq(path, name_contains, limit, min_len)
+        reads, seen = _take(iter_fastq(path, name_contains, min_len), limit)
         if reads:
-            out.append((path.stem, reads))
+            out.append((path.stem, reads, seen))
         else:
             print(f"no reads matched in {path.name}", file=sys.stderr)
     return out
@@ -214,9 +265,12 @@ def main(argv=None):
                         help="draw one group per FASTQ instead of pooling the "
                              "directory into a single pileup")
     parser.add_argument("--name", help="keep only reads whose name contains this")
-    parser.add_argument("--max", type=int,
-                        help="cap on the reads read into each group, taken in "
-                             "file order rather than sampled across the files")
+    parser.add_argument("--max", type=int, default=DEFAULT_MAX_READS,
+                        help="reads drawn per group, sampled uniformly from "
+                             "across the whole of every file rather than taken "
+                             f"from the front (default {DEFAULT_MAX_READS}); "
+                             "0 draws every read, which for a deep run is a "
+                             "page too large to open")
     parser.add_argument("--min-read-len", type=int, default=0,
                         help="drop reads shorter than this before aligning")
     parser.add_argument("--insert", help="feature label to derive flanks from")
@@ -253,9 +307,14 @@ def main(argv=None):
     if not samples:
         print(f"no reads matched in {args.reads}", file=sys.stderr)
         return 1
-    total_reads = sum(len(reads) for _, reads in samples)
-    print(f"{total_reads} reads to align in {len(samples)} "
+    total_reads = sum(len(reads) for _, reads, _ in samples)
+    total_seen = sum(seen for _, _, seen in samples)
+    sampled = " sampled from {:,}".format(total_seen) if total_seen > total_reads else ""
+    print(f"{total_reads:,} reads to align{sampled} in {len(samples)} "
           f"group{'s' if len(samples) != 1 else ''}, ordered by {args.order}")
+    if sampled:
+        print(f"pass --max 0 to draw all {total_seen:,}, at roughly "
+              f"{total_seen * 2 // 1000:,} MB of HTML")
 
     # A circular reference is aligned against two copies of itself so that reads
     # crossing the origin stay in one piece, then folded back to one copy.
@@ -267,7 +326,7 @@ def main(argv=None):
         print("circular: aligning against a doubled reference, then folding")
 
     groups = []
-    for label, reads in samples:
+    for label, reads, seen in samples:
         name = label or reference.name
         rows = grid_from_reads(reads, fasta, align_seq,
                                min_overlap_pos=args.min_overlap_pos)
@@ -282,9 +341,11 @@ def main(argv=None):
         rows = ORDERINGS[args.order](rows)
         covered = sum(1 for i in range(len(reference))
                       if any(row[i][0] != "-" for row in rows))
-        print(f"{name}: {len(rows)} of {len(reads)} reads drawn "
-              f"({len(rows) / len(reads):.0%}), {covered} of {len(reference)} "
-              f"positions covered ({covered / len(reference):.0%})")
+        of_seen = f", sampled from {seen:,}" if seen > len(reads) else ""
+        print(f"{name}: {len(rows)} of {len(reads):,} reads drawn "
+              f"({len(rows) / len(reads):.0%}){of_seen}; {covered} of "
+              f"{len(reference)} positions covered "
+              f"({covered / len(reference):.0%})")
         # No status: it is a consensus call, and this driver has no consensus to
         # report.  A constant string here would be styled as one and say nothing.
         groups.append(PileupGroup(name=name, ref_seq=reference.seq, rows=rows,

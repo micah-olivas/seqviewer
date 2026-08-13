@@ -102,10 +102,14 @@ alignment and biopython to read an annotated reference. `minimap2` and
 `samtools` still have to be on PATH. Without uv, run the same thing as
 `python -m seqviewer.cli`.
 
-Worth knowing: `--max` caps the reads read into each group, taken in file order
-rather than sampled across the files, and `--insert LABEL` marks a feature as
-the focus region, which is what draws the boundary lines and the translation
-rows. `--help` lists the rest.
+A page draws 500 reads by default, sampled uniformly from across the whole of
+every file. A row costs roughly 2 KB of HTML, so a 35,000-read pool drawn whole
+is a 70 MB page — too large to open, and no more readable for holding every
+read. `--max` moves the number and `--max 0` draws all of them. The sample is
+seeded, so the same directory gives the same page twice.
+
+Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
+what draws the boundary lines and the translation rows. `--help` lists the rest.
 
 ## Reference and Feature
 
