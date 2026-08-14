@@ -286,6 +286,11 @@ def main(argv=None):
     parser.add_argument("--no-circular", action="store_true",
                         help="align against one copy even if the reference is "
                              "circular, discarding origin-crossing segments")
+    parser.add_argument("--mismatch-freq", action="store_true",
+                        help="draw a per-position mismatch-frequency track "
+                             "below the features, showing what share of the "
+                             "shown reads disagree with the reference at "
+                             "each base")
     parser.add_argument("--title")
     args = parser.parse_args(argv)
 
@@ -366,6 +371,7 @@ def main(argv=None):
         flanks=focus_flanks(reference, args.insert),
         features=reference.features,
         ref_len=len(reference),
+        mismatch_freq=args.mismatch_freq,
     )
     print(f"flanks: {view.flanks} | {len(view.features)} features drawn")
     out.write_text(render(view))

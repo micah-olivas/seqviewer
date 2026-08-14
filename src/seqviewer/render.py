@@ -22,6 +22,8 @@ from .annotate import track_style as _track_style
 from .annotate import region_band_svg as _region_band_svg
 from .annotate import region_spans as _region_spans
 from .annotate import track_svg as _track_svg
+from .annotate import mismatch_track_svg as _mismatch_track_svg
+from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
 from .codon import translate as _translate
 from .pileup import PileupView
 
@@ -303,6 +305,7 @@ def render(view: PileupView) -> str:
         from collections import Counter
         consensus_encoded = []
         flagged_cols = []
+        mismatch_freqs = []
         ref_seq = g["ref_seq"]
         _MISMATCH_THRESHOLD = 0.10
         for col_idx in range(ref_len):
@@ -312,6 +315,7 @@ def render(view: PileupView) -> str:
                 if base != "-":
                     counts[base.upper()] += 1
             total = sum(counts.values())
+            freq = 0.0
             if counts:
                 cons_base = counts.most_common(1)[0][0]
                 if cons_base == ref_seq[col_idx].upper():
@@ -321,10 +325,12 @@ def render(view: PileupView) -> str:
                 # Flag if >10% of reads differ from reference
                 ref_base = ref_seq[col_idx].upper()
                 ref_count = counts.get(ref_base, 0)
-                if total and (total - ref_count) / total > _MISMATCH_THRESHOLD:
+                freq = (total - ref_count) / total if total else 0.0
+                if freq > _MISMATCH_THRESHOLD:
                     flagged_cols.append(col_idx)
             else:
                 consensus_encoded.append("-")
+            mismatch_freqs.append(freq)
         consensus_str = "".join(consensus_encoded)
         any_flags = any_flags or bool(flagged_cols)
 
@@ -376,6 +382,15 @@ def render(view: PileupView) -> str:
         band_svg = _region_band_svg(flank_lengths, ref_len, cell_w=cell_w)
         band_h = 15 + 4 if band_svg else 0
 
+        # Drawn only when asked for: another row of vertical space, spent only
+        # when the page is worth it.  Sits right under the features track, so a
+        # spike in disagreement can be read against what it falls in above it.
+        mismatch_svg = (
+            _mismatch_track_svg(mismatch_freqs, cell_w=cell_w)
+            if view.mismatch_freq else ""
+        )
+        mismatch_h = _MISMATCH_TRACK_HEIGHT + 5 if mismatch_svg else 0
+
         if n_rows == 0:
             pileup_block = (
                 f'<div class="pileup-empty">'
@@ -392,6 +407,7 @@ def render(view: PileupView) -> str:
                 f'{region_tint}'
                 f'{band_svg}'
                 f'{annot_svg}'
+                f'{mismatch_svg}'
                 f'<canvas id="ruler-{idx}" class="pileup-ruler"></canvas>'
                 f'<canvas id="pileup-{idx}"></canvas>'
                 f'</div>'
@@ -407,7 +423,7 @@ def render(view: PileupView) -> str:
                 f'var refAA={ref_protein_js};'
                 f'var consAA={cons_protein_js};'
                 f'var flaggedCols={flagged_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h});'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h});'
                 f'}})();'
                 f'</script>'
             )

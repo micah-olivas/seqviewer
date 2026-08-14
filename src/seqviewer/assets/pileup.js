@@ -1,4 +1,4 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
@@ -139,6 +139,12 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       annotLabel.textContent = 'Features';
       annotLabel.style.height = annotH + 'px';
       labelsEl.appendChild(annotLabel);
+    }
+    if (mismatchH) {
+      var mismatchLabel = document.createElement('span');
+      mismatchLabel.textContent = 'Mismatches';
+      mismatchLabel.style.height = mismatchH + 'px';
+      labelsEl.appendChild(mismatchLabel);
     }
     var rulerSpacer = document.createElement('span');
     rulerSpacer.style.height = rulerH + 'px';
@@ -300,16 +306,17 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var scrollEl = document.getElementById(scrollId);
     var wrapEl = document.getElementById(wrapId);
     if (scrollEl && wrapEl) {
+      var arrowsTop = (annotH || 0) + (mismatchH || 0);
       var leftArrow = document.createElement('div');
       leftArrow.className = 'pileup-mm-arrow pileup-mm-arrow-l';
       leftArrow.textContent = '◄';
-      leftArrow.style.top = (annotH || 0) + 'px';
+      leftArrow.style.top = arrowsTop + 'px';
       leftArrow.style.height = rulerH + 'px';
       wrapEl.appendChild(leftArrow);
       var rightArrow = document.createElement('div');
       rightArrow.className = 'pileup-mm-arrow pileup-mm-arrow-r';
       rightArrow.textContent = '►';
-      rightArrow.style.top = (annotH || 0) + 'px';
+      rightArrow.style.top = arrowsTop + 'px';
       rightArrow.style.height = rulerH + 'px';
       wrapEl.appendChild(rightArrow);
       function updateMmArrows() {

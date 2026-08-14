@@ -25,6 +25,7 @@ __all__ = [
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
     "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
+    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_THRESHOLD",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -497,6 +498,68 @@ def region_band_svg(flanks, ref_len: int, cell_w: Optional[int] = None,
                 f'dominant-baseline="central">{_escape(label)}</text>'
             )
         parts.append("</g>")
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+#: Height of the mismatch-frequency track, and the fraction its dashed guide
+#: line sits at -- the same cutoff the ruler's triangles fire at, so the two
+#: views of "how much disagreement" describe one threshold rather than two.
+MISMATCH_TRACK_HEIGHT = 24
+MISMATCH_TRACK_THRESHOLD = 0.10
+
+
+def mismatch_track_svg(
+    freqs: Sequence[float],
+    cell_w: Optional[int] = None,
+    prefix: str = "sv-mf",
+    height: int = MISMATCH_TRACK_HEIGHT,
+    threshold: float = MISMATCH_TRACK_THRESHOLD,
+) -> str:
+    """Per-position mismatch frequency as a step histogram, one bar per base.
+
+    *freqs* is one fraction per reference position: the share of reads called
+    there that disagree with the reference.  A run of equal fractions collapses
+    to a single path segment rather than one command per base, which is what
+    keeps a mostly-clean reference from emitting one command per column.
+
+    The track shares *cell_w* with the pileup and the feature track above it,
+    so a spike lines up with the column it describes.  Returns "" for an empty
+    reference, the convention :func:`track_svg` uses for a track with nothing
+    to draw.
+    """
+    n = len(freqs)
+    if not n:
+        return ""
+    if cell_w is None:
+        cell_w = cell_width(n)
+    width = n * cell_w
+    parts = [
+        f'<svg class="{prefix}" width="{width:.0f}" height="{height}" '
+        f'viewBox="0 0 {width:.0f} {height}" role="img" '
+        f'aria-label="mismatch frequency by position">'
+    ]
+    if 0 < threshold < 1:
+        ty = height - threshold * height
+        parts.append(f'<line class="{prefix}-thresh" x1="0" y1="{ty:.1f}" '
+                     f'x2="{width:.0f}" y2="{ty:.1f}"/>')
+    d = [f"M0,{height}"]
+    i = 0
+    while i < n:
+        j = i
+        frac = max(0.0, min(1.0, freqs[i]))
+        while j < n and freqs[j] == freqs[i]:
+            j += 1
+        x0, x1 = i * cell_w, j * cell_w
+        y = height - frac * height
+        d.append(f"L{x0:.1f},{y:.1f}")
+        d.append(f"L{x1:.1f},{y:.1f}")
+        i = j
+    d.append(f"L{width:.0f},{height}")
+    d.append("Z")
+    parts.append(f'<path class="{prefix}-fill" d="{"".join(d)}"/>')
+    parts.append(f'<line class="{prefix}-base" x1="0" y1="{height}" '
+                 f'x2="{width:.0f}" y2="{height}"/>')
     parts.append("</svg>")
     return "".join(parts)
 

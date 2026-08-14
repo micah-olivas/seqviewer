@@ -309,6 +309,39 @@ def test_reads_are_encoded_compactly():
     assert '"' + "." * 100 + '"' in html
 
 
+# --- Mismatch frequency track ----------------------------------------------
+
+def test_the_mismatch_track_is_off_by_default():
+    assert 'class="sv-mf"' not in render(_view())
+
+
+def test_asking_for_it_draws_the_track():
+    assert 'class="sv-mf"' in render(_view(mismatch_freq=True))
+
+
+def test_the_track_is_positioned_after_the_features_track():
+    """"Below the features" means in the markup between the annotation SVG and
+    the ruler canvas, since the page stacks them top to bottom in document flow.
+    """
+    from seqviewer.construct import Feature
+
+    ref = "ACGT" * 25
+    html = render(_view(mismatch_freq=True, features=[Feature("CDS", 0, 10, label="f")],
+                        ref_len=len(ref)))
+    annot_pos = html.index('class="sv-annot"')
+    mf_pos = html.index('class="sv-mf"')
+    ruler_pos = html.index('class="pileup-ruler"')
+    assert annot_pos < mf_pos < ruler_pos
+
+
+def test_a_group_with_no_rows_draws_no_pileup_at_all():
+    """The empty-group notice replaces the whole pileup, mismatch track included."""
+    html = render(_view(mismatch_freq=True,
+                        groups=[PileupGroup("g", "ACGT", [], n_reads=7)]))
+    assert 'class="sv-mf"' not in html
+    assert "No aligned reads available" in html
+
+
 def test_demo_view_renders():
     html = render(build_view())
     assert html.startswith("<!DOCTYPE html>")

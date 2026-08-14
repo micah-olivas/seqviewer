@@ -122,7 +122,9 @@ read. `--max` moves the number and `--max 0` draws all of them. The sample is
 seeded, so the same directory gives the same page twice.
 
 Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
-what draws the boundary lines and the translation rows. `--help` lists the rest.
+what draws the boundary lines and the translation rows. `--mismatch-freq` adds a
+track below the features showing, per position, what share of the shown reads
+disagree with the reference there. `--help` lists the rest.
 
 ## Reference and Feature
 

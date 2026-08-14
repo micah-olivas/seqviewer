@@ -317,6 +317,7 @@ html, body {
 }
 .sv-annot,
 .sv-band,
+.sv-mf,
 .pileup-scroll canvas {
     position: relative;
     z-index: 1;
@@ -344,4 +345,27 @@ html, body {
 }
 .sv-band-tins {
     fill: var(--__PREFIX__-boundary);
+}
+/* --- Mismatch frequency track ---
+   Optional (PileupView.mismatch_freq), one step-histogram bar per reference
+   position: what share of the group's shown reads disagree with the reference
+   there.  Sits directly under the features track, sharing its columns, so a
+   spike can be read against whatever it falls inside above it.  The dashed
+   line marks the same threshold the ruler's mismatch triangles fire at. */
+.sv-mf {
+    display: block;
+    margin-bottom: 5px;
+}
+.sv-mf-fill {
+    fill: var(--bad);
+    opacity: 0.55;
+}
+.sv-mf-base {
+    stroke: var(--border);
+    stroke-width: 1;
+}
+.sv-mf-thresh {
+    stroke: var(--__PREFIX__-boundary);
+    stroke-width: 1;
+    stroke-dasharray: 2,2;
 }

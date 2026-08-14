@@ -6,7 +6,8 @@ Pure geometry over Feature records, so none of this needs a browser or Biopython
 import re
 
 from seqviewer.annotate import (
-    LANE_GAP, LANE_HEIGHT, cell_width, plan_track, track_style, track_svg,
+    LANE_GAP, LANE_HEIGHT, cell_width, mismatch_track_svg, plan_track,
+    track_style, track_svg,
 )
 from seqviewer.construct import Feature
 
@@ -299,3 +300,36 @@ def test_lanes_are_stacked_by_transform():
     svg = track_svg(plan)
     assert "translate(0,0)" in svg
     assert f"translate(0,{LANE_HEIGHT + LANE_GAP})" in svg
+
+
+# --- Mismatch frequency track ----------------------------------------------
+
+def test_an_empty_reference_has_no_mismatch_track():
+    assert mismatch_track_svg([], cell_w=4) == ""
+
+
+def test_the_mismatch_track_is_sized_to_the_reference():
+    svg = mismatch_track_svg([0.0] * 100, cell_w=4)
+    assert 'width="400"' in svg
+
+
+def test_a_run_of_equal_frequencies_collapses_to_one_segment():
+    """A mostly-clean reference should not cost one path command per base."""
+    flat = mismatch_track_svg([0.0] * 500, cell_w=2)
+    spike = mismatch_track_svg([0.0] * 250 + [0.9] + [0.0] * 249, cell_w=2)
+    assert flat.count("L") <= 4
+    assert spike.count("L") > flat.count("L")
+
+
+def test_out_of_range_frequencies_are_clamped():
+    over = mismatch_track_svg([1.5], cell_w=4, height=20)
+    under = mismatch_track_svg([-0.5], cell_w=4, height=20)
+    assert "L0.0,0.0" in over      # clamped to the full-height top edge
+    assert "L0.0,20.0" in under    # clamped to the baseline
+
+
+def test_the_threshold_line_can_be_turned_off():
+    with_line = mismatch_track_svg([0.0] * 10, cell_w=4, threshold=0.10)
+    without_line = mismatch_track_svg([0.0] * 10, cell_w=4, threshold=0)
+    assert "sv-mf-thresh" in with_line
+    assert "sv-mf-thresh" not in without_line
