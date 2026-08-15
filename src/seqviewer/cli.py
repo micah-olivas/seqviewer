@@ -260,7 +260,8 @@ def main(argv=None):
                              "'source' to keep primer sites, which is what "
                              "shows the Golden Gate junctions on an amplicon; "
                              "pass '' to keep every feature the file declares")
-    parser.add_argument("out", help="HTML page to write")
+    parser.add_argument("out", help="HTML page to write; .html is appended "
+                                     "if not already there")
     parser.add_argument("--per-file", action="store_true",
                         help="draw one group per FASTQ instead of pooling the "
                              "directory into a single pileup")
@@ -325,6 +326,8 @@ def main(argv=None):
     # crossing the origin stay in one piece, then folded back to one copy.
     circular = reference.is_circular and not args.no_circular
     out = Path(args.out)
+    if out.suffix.lower() != ".html":
+        out = out.with_name(out.name + ".html")
     fasta = write_fasta(reference, out.with_suffix(".ref.fasta"), doubled=circular)
     align_seq = reference.seq * 2 if circular else reference.seq
     if circular:
