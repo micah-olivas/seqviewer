@@ -25,7 +25,7 @@ __all__ = [
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
     "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
-    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_THRESHOLD",
+    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_BRACKETS",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -502,26 +502,50 @@ def region_band_svg(flanks, ref_len: int, cell_w: Optional[int] = None,
     return "".join(parts)
 
 
-#: Height of the mismatch-frequency track, and the fraction its dashed guide
-#: line sits at -- the same cutoff the ruler's triangles fire at, so the two
-#: views of "how much disagreement" describe one threshold rather than two.
-MISMATCH_TRACK_HEIGHT = 24
-MISMATCH_TRACK_THRESHOLD = 0.10
+#: ``(low, high, row_height)`` bands the mismatch track splits its range into,
+#: each drawn as its own row and scaled linearly within its own span.  A single
+#: bar scaled across the whole 0-100% range put a real double-digit-percent
+#: variant only a few pixels from a background noise floor near zero; giving
+#: each order of magnitude its own dedicated pixels instead lets the floor
+#: show up as something rather than nothing, without lying about either end
+#: by compressing the axis.  Reading the track becomes "how many rows are
+#: lit", then how far into the next one -- a coarser, faster judgement than
+#: eyeballing a fraction of one shared bar.
+MISMATCH_TRACK_BRACKETS: Tuple[Tuple[float, float, int], ...] = (
+    (0.00, 0.01, 6),
+    (0.01, 0.05, 6),
+    (0.05, 0.15, 6),
+    (0.15, 1.00, 10),
+)
+MISMATCH_TRACK_HEIGHT = sum(h for _, _, h in MISMATCH_TRACK_BRACKETS)
+
+
+def _bracket_label(low: float, high: float) -> str:
+    if high >= 1.0:
+        return f"{low:.0%}+ of reads disagree here"
+    return f"{low:.0%}-{high:.0%} of reads disagree here"
 
 
 def mismatch_track_svg(
     freqs: Sequence[float],
     cell_w: Optional[int] = None,
     prefix: str = "sv-mf",
-    height: int = MISMATCH_TRACK_HEIGHT,
-    threshold: float = MISMATCH_TRACK_THRESHOLD,
+    brackets: Sequence[Tuple[float, float, int]] = MISMATCH_TRACK_BRACKETS,
 ) -> str:
-    """Per-position mismatch frequency as a step histogram, one bar per base.
+    """Per-position mismatch frequency as a threshold ladder.
 
     *freqs* is one fraction per reference position: the share of reads called
-    there that disagree with the reference.  A run of equal fractions collapses
-    to a single path segment rather than one command per base, which is what
-    keeps a mostly-clean reference from emitting one command per column.
+    there that disagree with the reference.  Each of *brackets* becomes one
+    row, translated to stack below the last, holding its own linear scale from
+    its low bound (empty) to its high bound (full) -- so a position's real
+    frequency is read off by how many rows it fills solidly, then how far it
+    reaches into the next, rather than as a sliver of one bar shared between a
+    background noise floor and a real variant an order of magnitude apart.
+
+    A run of equal fractions collapses to a single path segment per row rather
+    than one command per base, which is what keeps a mostly-clean reference
+    from emitting one command per column.  Each row's boundary carries a
+    ``<title>`` naming its range, since a 6px row has no room for visible text.
 
     The track shares *cell_w* with the pileup and the feature track above it,
     so a spike lines up with the column it describes.  Returns "" for an empty
@@ -534,32 +558,37 @@ def mismatch_track_svg(
     if cell_w is None:
         cell_w = cell_width(n)
     width = n * cell_w
+    total_h = sum(h for _, _, h in brackets)
     parts = [
-        f'<svg class="{prefix}" width="{width:.0f}" height="{height}" '
-        f'viewBox="0 0 {width:.0f} {height}" role="img" '
+        f'<svg class="{prefix}" width="{width:.0f}" height="{total_h}" '
+        f'viewBox="0 0 {width:.0f} {total_h}" role="img" '
         f'aria-label="mismatch frequency by position">'
     ]
-    if 0 < threshold < 1:
-        ty = height - threshold * height
-        parts.append(f'<line class="{prefix}-thresh" x1="0" y1="{ty:.1f}" '
-                     f'x2="{width:.0f}" y2="{ty:.1f}"/>')
-    d = [f"M0,{height}"]
-    i = 0
-    while i < n:
-        j = i
-        frac = max(0.0, min(1.0, freqs[i]))
-        while j < n and freqs[j] == freqs[i]:
-            j += 1
-        x0, x1 = i * cell_w, j * cell_w
-        y = height - frac * height
-        d.append(f"L{x0:.1f},{y:.1f}")
-        d.append(f"L{x1:.1f},{y:.1f}")
-        i = j
-    d.append(f"L{width:.0f},{height}")
-    d.append("Z")
-    parts.append(f'<path class="{prefix}-fill" d="{"".join(d)}"/>')
-    parts.append(f'<line class="{prefix}-base" x1="0" y1="{height}" '
-                 f'x2="{width:.0f}" y2="{height}"/>')
+    y = 0
+    for low, high, h in brackets:
+        span = high - low
+        parts.append(f'<g transform="translate(0,{y})">')
+        parts.append(f'<title>{_escape(_bracket_label(low, high))}</title>')
+        d = [f"M0,{h}"]
+        i = 0
+        while i < n:
+            j = i
+            while j < n and freqs[j] == freqs[i]:
+                j += 1
+            frac = freqs[i]
+            level = 0.0 if frac <= low else 1.0 if frac >= high else (frac - low) / span
+            x0, x1 = i * cell_w, j * cell_w
+            by = h - level * h
+            d.append(f"L{x0:.1f},{by:.1f}")
+            d.append(f"L{x1:.1f},{by:.1f}")
+            i = j
+        d.append(f"L{width:.0f},{h}")
+        d.append("Z")
+        parts.append(f'<path class="{prefix}-fill" d="{"".join(d)}"/>')
+        parts.append(f'<line class="{prefix}-base" x1="0" y1="{h}" '
+                     f'x2="{width:.0f}" y2="{h}"/>')
+        parts.append("</g>")
+        y += h
     parts.append("</svg>")
     return "".join(parts)
 
