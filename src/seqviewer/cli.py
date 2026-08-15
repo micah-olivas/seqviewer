@@ -160,6 +160,20 @@ def write_fasta(reference, path, doubled=False):
     return str(path)
 
 
+def write_log(out, args, lines):
+    """Write a plain-text log of this run next to the HTML page it produced.
+
+    Just the run's own stdout narration (reference, files, counts) plus the
+    ordering function applied, so the page's provenance survives without
+    re-running the command.
+    """
+    log_path = out.with_suffix(".log.txt")
+    header = [f"seqviewer-pileup log: {out.stem}",
+              f"ordering function: {args.order}", ""]
+    log_path.write_text("\n".join(header + lines) + "\n")
+    return log_path
+
+
 def fold(row, length):
     """Collapse a row aligned against a doubled reference back to one copy.
 
@@ -301,20 +315,26 @@ def main(argv=None):
     parser.add_argument("--title")
     args = parser.parse_args(argv)
 
+    log_lines = []
+
+    def log(msg):
+        print(msg)
+        log_lines.append(msg)
+
     skip_types = (None if args.skip_types is None
                   else tuple(t for t in args.skip_types.split(",") if t))
     reference = load_reference(args.reference, skip_types=skip_types)
     if args.ref_name:
         reference.name = args.ref_name
-    print(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
-          f"{len(reference.features)} features")
+    log(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
+        f"{len(reference.features)} features")
 
     paths = fastq_paths(args.reads)
     if not paths:
         print(f"no FASTQ files at {args.reads}", file=sys.stderr)
         return 1
-    print(f"{len(paths)} FASTQ file{'s' if len(paths) != 1 else ''}: "
-          + ", ".join(p.name for p in paths))
+    log(f"{len(paths)} FASTQ file{'s' if len(paths) != 1 else ''}: "
+        + ", ".join(p.name for p in paths))
 
     samples = collect_samples(paths, args.name, args.max, args.min_read_len,
                               pooled=not args.per_file)
@@ -324,8 +344,8 @@ def main(argv=None):
     total_reads = sum(len(reads) for _, reads, _ in samples)
     total_seen = sum(seen for _, _, seen in samples)
     sampled = " sampled from {:,}".format(total_seen) if total_seen > total_reads else ""
-    print(f"{total_reads:,} reads to align{sampled} in {len(samples)} "
-          f"group{'s' if len(samples) != 1 else ''}, ordered by {args.order}")
+    log(f"{total_reads:,} reads to align{sampled} in {len(samples)} "
+        f"group{'s' if len(samples) != 1 else ''}, ordered by {args.order}")
     if sampled:
         print(f"pass --max 0 to draw all {total_seen:,}, at roughly "
               f"{total_seen * 2 // 1000:,} MB of HTML")
@@ -339,7 +359,7 @@ def main(argv=None):
     fasta = write_fasta(reference, out.with_suffix(".ref.fasta"), doubled=circular)
     align_seq = reference.seq * 2 if circular else reference.seq
     if circular:
-        print("circular: aligning against a doubled reference, then folding")
+        log("circular: aligning against a doubled reference, then folding")
 
     groups = []
     for label, reads, seen in samples:
@@ -358,10 +378,10 @@ def main(argv=None):
         covered = sum(1 for i in range(len(reference))
                       if any(row[i][0] != "-" for row in rows))
         of_seen = f", sampled from {seen:,}" if seen > len(reads) else ""
-        print(f"{name}: {len(rows)} of {len(reads):,} reads drawn "
-              f"({len(rows) / len(reads):.0%}){of_seen}; {covered} of "
-              f"{len(reference)} positions covered "
-              f"({covered / len(reference):.0%})")
+        log(f"{name}: {len(rows)} of {len(reads):,} reads drawn "
+            f"({len(rows) / len(reads):.0%}){of_seen}; {covered} of "
+            f"{len(reference)} positions covered "
+            f"({covered / len(reference):.0%})")
         # No status: it is a consensus call, and this driver has no consensus to
         # report.  A constant string here would be styled as one and say nothing.
         groups.append(PileupGroup(name=name, ref_seq=reference.seq, rows=rows,
@@ -384,9 +404,11 @@ def main(argv=None):
         ref_len=len(reference),
         mismatch_freq=args.mismatch_freq,
     )
-    print(f"flanks: {view.flanks} | {len(view.features)} features drawn")
+    log(f"flanks: {view.flanks} | {len(view.features)} features drawn")
     out.write_text(render(view))
     print(f"Wrote {out.resolve()}")
+    log_path = write_log(out, args, log_lines)
+    print(f"Wrote {log_path.resolve()}")
     return 0
 
 
