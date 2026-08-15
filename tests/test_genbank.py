@@ -267,3 +267,20 @@ def test_fasta_needs_no_annotations(tmp_path):
     assert reference.seq == "ACGTACGTACGT"
     assert reference.name == "my-ref"
     assert reference.features == []
+
+
+def test_biopython_unknown_name_sentinel_falls_back_to_the_filename(tmp_path, monkeypatch):
+    """Biopython leaves ``record.name`` as the literal ``"<unknown name>"`` when a
+    SnapGene or GenBank file has no name of its own; that sentinel, not the plain
+    word "unknown", is what the fallback has to catch.
+    """
+    class _NamelessRecord:
+        name = "<unknown name>"
+        seq = "ACGT"
+        annotations = {}
+        features = []
+
+    monkeypatch.setattr("Bio.SeqIO.parse", lambda *a, **k: iter([_NamelessRecord()]))
+    path = tmp_path / "construct.dna"
+    path.touch()
+    assert load_reference(path).name == "construct"

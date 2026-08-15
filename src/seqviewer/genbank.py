@@ -255,7 +255,7 @@ def load_reference(path, skip_types: Optional[Sequence[str]] = None) -> Referenc
 
     return Reference(
         seq=seq,
-        name=record.name if record.name and record.name != "unknown" else path.stem,
+        name=record.name if record.name and record.name != "<unknown name>" else path.stem,
         topology=topology,
         features=_drop_redundant_genes(features),
     )

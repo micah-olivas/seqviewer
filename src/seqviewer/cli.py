@@ -292,12 +292,20 @@ def main(argv=None):
                              "below the features, showing what share of the "
                              "shown reads disagree with the reference at "
                              "each base")
+    parser.add_argument("--ref-name",
+                        help="name for the reference, overriding what the file "
+                             "carries (a GenBank/SnapGene file's declared name, "
+                             "or a FASTA header, is often not human-friendly); "
+                             "used as the pooled group name and in the default "
+                             "title")
     parser.add_argument("--title")
     args = parser.parse_args(argv)
 
     skip_types = (None if args.skip_types is None
                   else tuple(t for t in args.skip_types.split(",") if t))
     reference = load_reference(args.reference, skip_types=skip_types)
+    if args.ref_name:
+        reference.name = args.ref_name
     print(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
           f"{len(reference.features)} features")
 
