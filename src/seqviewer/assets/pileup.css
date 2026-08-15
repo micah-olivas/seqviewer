@@ -264,6 +264,15 @@ html, body {
     align-items: center;
     justify-content: flex-end;
 }
+/* A label that carries a title explains itself on hover, same as .sv-fact
+   in the masthead; the cursor is the only standing hint until then. */
+.pileup-labels span[title] {
+    cursor: help;
+}
+.pileup-labels span[title]:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+}
 .pileup-empty {
     font-size: 0.85rem;
     color: var(--muted);
@@ -347,12 +356,11 @@ html, body {
     fill: var(--__PREFIX__-boundary);
 }
 /* --- Mismatch frequency track ---
-   Optional (PileupView.mismatch_freq): a threshold ladder, one row per
-   MISMATCH_TRACK_BRACKETS band, each linear within its own low..high span.
-   Sits directly under the features track, sharing its columns, so a spike can
-   be read against whatever it falls inside above it.  A row's own baseline
-   doubles as the boundary with the row below it, which is what makes the
-   stack read as a ladder rather than four unrelated strips. */
+   Optional (PileupView.mismatch_freq): one row, mismatch frequency per
+   position scaled against MISMATCH_TRACK_CEILING rather than 1.0, so a
+   position past that ceiling draws at full height instead of at a sliver of
+   it.  Sits directly under the features track, sharing its columns, so a
+   spike can be read against whatever it falls inside above it. */
 .sv-mf {
     display: block;
     margin-bottom: 5px;

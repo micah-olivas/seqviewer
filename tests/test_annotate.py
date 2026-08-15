@@ -6,7 +6,7 @@ Pure geometry over Feature records, so none of this needs a browser or Biopython
 import re
 
 from seqviewer.annotate import (
-    LANE_GAP, LANE_HEIGHT, MISMATCH_TRACK_BRACKETS, MISMATCH_TRACK_HEIGHT,
+    LANE_GAP, LANE_HEIGHT, MISMATCH_TRACK_CEILING, MISMATCH_TRACK_HEIGHT,
     cell_width, mismatch_track_svg, plan_track, track_style, track_svg,
 )
 from seqviewer.construct import Feature
@@ -308,52 +308,41 @@ def test_an_empty_reference_has_no_mismatch_track():
     assert mismatch_track_svg([], cell_w=4) == ""
 
 
-def test_the_mismatch_track_is_sized_to_the_reference_and_its_brackets():
+def test_the_mismatch_track_is_sized_to_the_reference():
     svg = mismatch_track_svg([0.0] * 100, cell_w=4)
     assert 'width="400"' in svg
     assert f'height="{MISMATCH_TRACK_HEIGHT}"' in svg
 
 
-def test_a_run_of_equal_frequencies_collapses_to_one_segment_per_row():
+def test_a_run_of_equal_frequencies_collapses_to_one_segment():
     """A mostly-clean reference should not cost one path command per base."""
     flat = mismatch_track_svg([0.0] * 500, cell_w=2)
     spike = mismatch_track_svg([0.0] * 250 + [0.9] + [0.0] * 249, cell_w=2)
-    assert flat.count("L") == 3 * len(MISMATCH_TRACK_BRACKETS)
+    assert flat.count("L") == 3
     assert spike.count("L") > flat.count("L")
 
 
-def test_out_of_range_frequencies_are_clamped_in_every_bracket():
-    n = len(MISMATCH_TRACK_BRACKETS)
-    over = mismatch_track_svg([1.5], cell_w=4)
-    under = mismatch_track_svg([-0.5], cell_w=4)
-    assert over.count("L0.0,0.0") == n     # every row fully lit, top edge
-    assert "L0.0,0.0" not in under         # no row lit at all
+def test_a_frequency_at_the_ceiling_is_drawn_at_full_height():
+    svg = mismatch_track_svg([MISMATCH_TRACK_CEILING], cell_w=4)
+    assert "L0.0,0.0" in svg
 
 
-def test_a_position_fills_only_the_brackets_it_reaches():
-    """0.20 clears the first three brackets (highs 0.01, 0.05, 0.15) but only
-    partway into the fourth (0.15..1.00), so exactly three rows read fully lit.
+def test_a_frequency_past_the_ceiling_is_clamped_not_scaled_further():
+    """A position at 2x the ceiling should look identical to one at 100x it --
+    both are already the most extreme thing the track draws.
     """
-    svg = mismatch_track_svg([0.20], cell_w=4)
-    assert svg.count("L0.0,0.0") == 3
+    just_over = mismatch_track_svg([MISMATCH_TRACK_CEILING * 2], cell_w=4)
+    way_over = mismatch_track_svg([MISMATCH_TRACK_CEILING * 100], cell_w=4)
+    assert just_over == way_over
 
 
-def test_each_bracket_carries_a_tooltip_naming_its_range():
-    svg = mismatch_track_svg([0.2] * 10, cell_w=4)
-    assert svg.count("<title>") == len(MISMATCH_TRACK_BRACKETS)
-    assert "0%-1%" in svg
-    assert "5%-15%" in svg
-    assert "15%+" in svg
+def test_a_frequency_below_the_ceiling_is_scaled_within_it():
+    svg = mismatch_track_svg([MISMATCH_TRACK_CEILING / 2], cell_w=4,
+                             height=20)
+    assert "L0.0,10.0" in svg      # halfway to the ceiling, halfway up
 
 
-def test_brackets_stack_by_transform():
-    svg = mismatch_track_svg([0.0] * 10, cell_w=4)
-    assert "translate(0,0)" in svg
-    first_h = MISMATCH_TRACK_BRACKETS[0][2]
-    assert f"translate(0,{first_h})" in svg
-
-
-def test_custom_brackets_override_the_default_ladder():
-    svg = mismatch_track_svg([0.5], cell_w=4, brackets=((0.0, 1.0, 12),))
-    assert svg.count("<title>") == 1
-    assert 'height="12"' in svg
+def test_zero_and_negative_frequencies_draw_nothing():
+    svg = mismatch_track_svg([0.0, -0.5], cell_w=4, height=20)
+    assert "L0.0,0.0" not in svg
+    assert "L8.0,0.0" not in svg

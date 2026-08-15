@@ -143,6 +143,10 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     if (mismatchH) {
       var mismatchLabel = document.createElement('span');
       mismatchLabel.textContent = 'Mismatches';
+      mismatchLabel.title = 'Share of the reads called at this position that '
+        + 'disagree with the reference. Gaps and uncalled reads count for '
+        + 'neither side. Drawn on a 0-1% scale, so a position above 1% shows '
+        + 'at full height.';
       mismatchLabel.style.height = mismatchH + 'px';
       labelsEl.appendChild(mismatchLabel);
     }
