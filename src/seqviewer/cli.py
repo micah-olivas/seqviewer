@@ -18,6 +18,11 @@ two adjustments a plasmid needs.  A circular reference is aligned against a
 doubled copy so reads crossing the origin stay whole, and a named feature can
 supply the flanks the page marks.
 
+``--summary`` writes a second page beside the pileup, reduced from the same
+view: the construct as an annotated map, one band per group with a lollipop per
+called variant, and the variants as a table.  It answers "is anything wrong with
+this clone" where the pileup answers "what does every read say".
+
 seqviewer takes reads as ``Read(name, seq, qual)`` records, so FASTQ parsing is
 the caller's job.  Everything after that is grid_from_reads plus render.
 """
@@ -35,6 +40,8 @@ from .align import Read, grid_from_reads
 from .genbank import load_reference
 from .pileup import PileupGroup, PileupView
 from .render import render
+from .render_summary import render_summary
+from .summary import DEFAULT_MIN_COUNT, DEFAULT_MIN_FRACTION, SummaryView
 
 FASTQ_SUFFIXES = (".fastq", ".fq", ".fastq.gz", ".fq.gz")
 
@@ -47,6 +54,17 @@ DEFAULT_MAX_READS = 500
 
 # Fixed, so the same directory downsamples to the same page twice.
 SAMPLE_SEED = 0
+
+
+def summary_path(out):
+    """Where the summarized page goes, given the pileup's *out* path.
+
+    Beside the pileup rather than replacing it, and named from its stem, so a
+    directory of runs sorts each pair together: ``1A12.html`` next to
+    ``1A12.summary.html``.
+    """
+    out = Path(out)
+    return out.with_name(out.stem + ".summary.html")
 
 
 def fastq_paths(path):
@@ -260,7 +278,12 @@ def focus_flanks(reference, label):
     return None
 
 
-def main(argv=None):
+def build_parser():
+    """The command line, as a parser.
+
+    Separated from :func:`main` so the flags and their defaults can be
+    tested without running an alignment.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reads",
                         help="a directory of FASTQs, pooled into one pileup, or "
@@ -312,7 +335,31 @@ def main(argv=None):
                              "or a FASTA header, is often not human-friendly); "
                              "used as the pooled group name and in the default "
                              "title")
+    parser.add_argument("--summary", action="store_true",
+                        help="also write a summarized page beside the pileup: "
+                             "the construct as an annotated map, one compact "
+                             "band per group with a lollipop per called "
+                             "variant, and the variants as a table. Named "
+                             "<out>.summary.html")
+    parser.add_argument("--variant-freq", type=float,
+                        default=DEFAULT_MIN_FRACTION, metavar="F",
+                        help="share of covering reads an allele needs before "
+                             "the summary calls it (default "
+                             f"{DEFAULT_MIN_FRACTION:g}). Lower it to see "
+                             "events the default suppresses as sequencing "
+                             "error; only meaningful with --summary")
+    parser.add_argument("--variant-reads", type=int,
+                        default=DEFAULT_MIN_COUNT, metavar="N",
+                        help="reads that must support an allele whatever the "
+                             f"share (default {DEFAULT_MIN_COUNT}). At shallow "
+                             "depth a single read is the error rate, not a "
+                             "variant; only meaningful with --summary")
     parser.add_argument("--title")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     log_lines = []
@@ -407,6 +454,26 @@ def main(argv=None):
     log(f"flanks: {view.flanks} | {len(view.features)} features drawn")
     out.write_text(render(view))
     print(f"Wrote {out.resolve()}")
+
+    if args.summary:
+        # Reduced from the same view the pileup drew, so the two pages cannot
+        # disagree about the reference, the focus region, or the features.
+        summary = SummaryView.from_view(
+            view,
+            min_fraction=args.variant_freq,
+            min_count=args.variant_reads,
+        )
+        log(f"summary: calling at >={args.variant_freq:.0%} of covering reads "
+            f"and >={args.variant_reads} supporting")
+        for group in summary.groups:
+            called = len(group.variants)
+            log(f"{group.name}: {called} variant{'s' if called != 1 else ''} "
+                f"called, {group.verdict}; {group.mean_depth:.0f}x mean depth "
+                f"over {group.covered} of {group.ref_len} positions")
+        summary_out = summary_path(out)
+        summary_out.write_text(render_summary(summary))
+        print(f"Wrote {summary_out.resolve()}")
+
     log_path = write_log(out, args, log_lines)
     print(f"Wrote {log_path.resolve()}")
     return 0

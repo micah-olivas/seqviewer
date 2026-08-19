@@ -1,11 +1,24 @@
-"""Tests for the command line driver's read collection.
+"""Tests for the command line driver's read collection and its output paths.
 
 These cover the part that decides *which* reads reach the aligner — finding the
-FASTQs at a path and pooling or splitting them.  Nothing here aligns anything,
-so none of it needs pysam, minimap2, or samtools.
+FASTQs at a path and pooling or splitting them — and where the pages it writes
+go.  All of it is pure, so none of it needs pysam, minimap2, or samtools; the one
+end-to-end test that does need them skips when they are absent.
 """
 
-from seqviewer.cli import collect_samples, fastq_paths, read_fastq
+import random
+import shutil
+from pathlib import Path
+
+import pytest
+
+from seqviewer.cli import (
+    build_parser, collect_samples, fastq_paths, main, read_fastq, summary_path,
+)
+from seqviewer.summary import DEFAULT_MIN_COUNT, DEFAULT_MIN_FRACTION
+
+#: Fixed, so the end-to-end fixture is the same sequence every run.
+RNG = random.Random(5)
 
 READS = [("r1", "ACGTACGT"), ("r2", "ACGTTTTT"), ("r3", "AC")]
 
@@ -152,3 +165,79 @@ def test_gzipped_fastqs_are_read_and_found(tmp_path):
         handle.write("@r1\nACGT\n+\nIIII\n")
     assert fastq_paths(tmp_path) == [path]
     assert [r.name for r in read_fastq(path)] == ["r1"]
+
+
+# --- The summarized page --------------------------------------------------
+
+def test_the_summary_page_sits_beside_the_pileup():
+    """A directory of runs sorts each pair together."""
+    assert summary_path("1A12.html").name == "1A12.summary.html"
+
+
+def test_the_summary_path_is_derived_from_the_stem_not_appended():
+    """Not 1A12.html.summary.html, which sorts away from its own pileup."""
+    assert summary_path(Path("runs/1A12.html")) == Path("runs/1A12.summary.html")
+
+
+def test_a_path_with_dots_in_its_name_keeps_them():
+    assert summary_path("plate.1.A12.html").name == "plate.1.A12.summary.html"
+
+
+def test_the_cli_calling_thresholds_do_not_drift_from_the_reducer():
+    """The flags default to the module's own floors rather than restating them."""
+    defaults = {a.dest: a.default for a in build_parser()._actions}
+    assert defaults["variant_freq"] == DEFAULT_MIN_FRACTION
+    assert defaults["variant_reads"] == DEFAULT_MIN_COUNT
+    assert defaults["summary"] is False
+
+
+@pytest.mark.skipif(shutil.which("minimap2") is None
+                    or shutil.which("samtools") is None,
+                    reason="needs minimap2 and samtools on PATH")
+def test_summary_writes_a_second_page_reporting_the_planted_variant(tmp_path):
+    """End to end through the real aligner, not a synthetic grid.
+
+    Also pins the two limits the reducer documents: a deletion is recovered from
+    the alignment, and a planted insertion is not, because a grid is exactly as
+    wide as the reference and has nowhere to put one.
+    """
+    ref = "".join(RNG.choice("ACGT") for _ in range(900))
+    cds_start = 150
+    snv = cds_start + 149            # inside the reading frame
+    deletion = cds_start + 300
+
+    (tmp_path / "ref.fasta").write_text(">pTEST\n" + ref + "\n")
+    reads = []
+    for i in range(20):
+        reads.append((f"clean{i}", ref))
+    for i in range(20):
+        alt = "A" if ref[snv] != "A" else "C"
+        reads.append((f"snv{i}", ref[:snv] + alt + ref[snv + 1:]))
+    for i in range(20):
+        reads.append((f"del{i}", ref[:deletion] + ref[deletion + 3:]))
+    for i in range(20):
+        reads.append((f"ins{i}", ref[:600] + "GGG" + ref[600:]))
+    _fastq(tmp_path / "reads.fastq", reads)
+
+    out = tmp_path / "page"
+    code = main([str(tmp_path / "reads.fastq"), str(tmp_path / "ref.fasta"),
+                 str(out), "--summary", "--variant-freq", "0.1"])
+    assert code == 0
+
+    pileup = out.with_suffix(".html")
+    summary = summary_path(pileup)
+    assert pileup.exists()
+    assert summary.exists()
+
+    html = summary.read_text()
+    assert html.startswith("<!DOCTYPE html>")
+    assert "SNV" in html
+    assert "Deletion" in html
+    # The grid cannot carry an insertion, so none is reported however many
+    # reads carry one.  This is the documented limit, pinned.
+    assert "Insertion" not in html
+
+
+def test_no_summary_page_is_written_unless_asked_for(tmp_path):
+    """The flag is opt-in; a plain run leaves no stray file."""
+    assert not summary_path(tmp_path / "page.html").exists()
