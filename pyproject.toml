@@ -1,10 +1,10 @@
 [project]
 name = "seqviewer"
 version = "0.1.0"
-description = "Lightweight viewers for sequencing constructs: read pileups against a reference."
+description = "Lightweight viewers for sequencing constructs: read pileups against a reference, and summarized variant maps."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Micah Olivas", email = "mbolivas@stanford.edu" }]
 
 # The core (model + renderer) is deliberately dependency-free: it turns a grid

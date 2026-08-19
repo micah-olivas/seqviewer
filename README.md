@@ -1,8 +1,8 @@
 # seqviewer
 
-Viewers for sequencing constructs — plasmids and amplicon-with-insert. The
-package currently renders read pileups against a reference as self-contained
-HTML.
+Viewers for sequencing constructs — plasmids and amplicon-with-insert. Two views
+over the same data, both written as self-contained HTML: a read pileup, and a
+summarized map of what the reads add up to.
 
 A pileup page draws an HTML5 canvas matrix: one row per read, one cell per
 reference position. Matches are gray, mismatches take a per-base color, gaps are
@@ -11,20 +11,23 @@ the view marks an insert, the reference and consensus translations of that
 insert. Reads are ordered by mismatch pattern, so subpopulations appear as
 blocks.
 
+A summary page draws the construct as an annotated map, then one compact band per
+group: a lollipop per called variant over the reference ribbon, and a coverage
+profile beneath it.
+
 ## Install
 
-The core is dependency-free. Reading alignments needs pysam, and aligning reads
-also needs `minimap2` and `samtools` on PATH.
+The core is dependency-free. Reading alignments needs pysam; aligning reads also
+needs `minimap2` and `samtools` on PATH; reading an annotated reference needs
+biopython.
 
 ```bash
-pip install -e .            # render only
-pip install -e '.[sam]'     # + read SAM/BAM
-pip install -e '.[align]'   # + align reads first
-pip install -e '.[cli]'     # + the seqviewer-pileup command
+pip install 'seqviewer @ git+https://github.com/micah-olivas/seqviewer'
+pip install 'seqviewer[cli] @ git+https://github.com/micah-olivas/seqviewer'
 ```
 
-The package is private and not on an index. Install it editable from a local
-checkout. With uv, no install step is needed: `uv run` builds the project into
+Not on PyPI. From a checkout, `pip install -e '.[cli]'` installs the same extras
+editable. With uv, no install step is needed: `uv run` builds the project into
 its own environment first, so the commands below work in a fresh clone.
 
 ## Input levels
@@ -77,11 +80,52 @@ Concatemer fragments cover one flank and stop, so this filter removes them while
 keeping full-length reads. Pass `min_overlap_pos=0` to disable it, or an explicit
 position to move it.
 
-To see a page without reads or an aligner:
+To see both pages without reads or an aligner:
 
 ```bash
 python -m seqviewer.demo demo.html
+python -m seqviewer.demo demo.html --summary
 ```
+
+## Summarized view
+
+`SummaryView.from_view` reduces a `PileupView` to per-position depth, agreement,
+and deletions, plus a list of called variants classified against the reading
+frame. `render_summary` draws that.
+
+```python
+from pathlib import Path
+from seqviewer import SummaryView, render_summary
+
+Path("summary.html").write_text(render_summary(SummaryView.from_view(view)))
+```
+
+Glyph shape carries the kind of change — substitution, deletion, insertion — and
+color carries the consequence: frameshift or premature stop, missense or in-frame
+indel, silent, or outside the reading frame. Stem height is the allele fraction.
+Each called variant also gets a base-resolution window, drawn as one letter per
+base with each codon bracketed under the three bases it is translated from.
+
+A variant is called when at least 25% of the reads covering its position carry it
+and at least two of them do. `min_fraction` and `min_count` move both floors. The
+read floor matters at the depths these pages are made for: with ten reads, one
+read is 10%, so a fraction alone admits the per-base error rate as an allele.
+
+Substitutions and deletions are recovered from the grid. Insertions are not. An
+inserted base has no reference position, so `align` drops it and a row stays
+exactly as wide as the reference, leaving nowhere to hold one. `Variant` models
+`kind="ins"` and `summarize_group` accepts insertion evidence passed alongside
+the grid, so a caller holding it can supply it; a grid alone reports none.
+`tests/test_cli.py` pins that against minimap2 output.
+
+The two pages scale differently. A pileup holds one row per read, so its size
+follows the run's depth; a summary holds one band per group and one window per
+called variant, so its size follows what was called rather than how deep the run
+was.
+
+`summary.flagged_columns` is the per-column disagreement statistic as a pure
+function of a grid and a reference, for callers that want the flagged positions
+without a page.
 
 ## Command line
 
@@ -106,14 +150,14 @@ That form has to be run from a checkout. To get the command on PATH and run it
 from wherever the reads are:
 
 ```bash
-uv tool install --python 3.13 --editable '/path/to/seqviewer[cli]'
+uv tool install --python 3.13 'seqviewer[cli] @ git+https://github.com/micah-olivas/seqviewer'
 seqviewer-pileup reads/ reference.dna pileup.html      # from anywhere
 ```
 
-Editable, so the installed command tracks the checkout and a `git pull` is the
-whole upgrade. The Python has to be named: `uv tool install` otherwise takes the
-default interpreter, and a conda base of 3.8 does not satisfy this package's
-`requires-python`. `uv tool uninstall seqviewer` undoes it.
+Pass `--editable '/path/to/seqviewer[cli]'` instead to track a local checkout, so
+a `git pull` is the whole upgrade. The Python has to be named: `uv tool install`
+otherwise takes the default interpreter, and a conda base of 3.8 does not satisfy
+this package's `requires-python`. `uv tool uninstall seqviewer` undoes it.
 
 A page draws 500 reads by default, sampled uniformly from across the whole of
 every file. A row costs roughly 2 KB of HTML, so a 35,000-read pool drawn whole
@@ -121,10 +165,16 @@ is a 70 MB page — too large to open, and no more readable for holding every
 read. `--max` moves the number and `--max 0` draws all of them. The sample is
 seeded, so the same directory gives the same page twice.
 
+`--summary` writes the summarized page beside the pileup, named from its stem:
+`pileup.html` and `pileup.summary.html`. `--variant-freq` and `--variant-reads`
+move the two calling floors. The log written beside the page records which
+thresholds produced it and what was called.
+
 Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
-what draws the boundary lines and the translation rows. `--mismatch-freq` adds a
-track below the features showing, per position, what share of the shown reads
-disagree with the reference there. `--help` lists the rest.
+what draws the boundary lines, the translation rows, and the frame that variants
+are classified against. `--mismatch-freq` adds a track below the features
+showing, per position, what share of the shown reads disagree with the reference
+there. `--help` lists the rest.
 
 ## Reference and Feature
 
@@ -147,11 +197,15 @@ view = PileupView.from_reference("Well A1", reference, groups)
 assert view.flanks == (100, 100)
 ```
 
+Feature glyphs are laid out by `seqviewer.annotate` and drawn as inline SVG.
+Overlapping features pack into lanes; a feature that will not fit within the lane
+limit is dropped and returned, so a page can say what it left out.
+
 ## Theming
 
 A rendered page carries its own light and dark palettes and reads a stored
 preference on load. An application that already stores one passes its own names
-so the pileup follows the same setting as the rest of its output:
+so the pages follow the same setting as the rest of its output:
 
 ```python
 from seqviewer import Theme
@@ -189,4 +243,8 @@ pytest
 ```
 
 Alignment tests build a SAM by hand and run without minimap2 or samtools; the
-one test that needs both is skipped when they are absent.
+tests that need both are skipped when they are absent.
+
+## License
+
+MIT. See `LICENSE`.
