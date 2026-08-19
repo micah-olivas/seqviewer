@@ -1,19 +1,6 @@
 # seqviewer
 
-Viewers for sequencing constructs — plasmids and amplicon-with-insert. Two views
-over the same data, both written as self-contained HTML: a read pileup, and a
-summarized map of what the reads add up to.
-
-A pileup page draws an HTML5 canvas matrix: one row per read, one cell per
-reference position. Matches are gray, mismatches take a per-base color, gaps are
-white. Above the reads sit a position ruler and a consensus row; below them, when
-the view marks an insert, the reference and consensus translations of that
-insert. Reads are ordered by mismatch pattern, so subpopulations appear as
-blocks.
-
-A summary page draws the construct as an annotated map, then one compact band per
-group: a lollipop per called variant over the reference ribbon, and a coverage
-profile beneath it.
+Viewers for sequence alignments, supporting both single-sequence and multi-sequence pileups.
 
 ## Install
 
