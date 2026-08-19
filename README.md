@@ -1,6 +1,6 @@
 # seqviewer
 
-Viewers for sequence alignments, supporting both single-sequence and multi-sequence pileups.
+Viewers for sequencing alignments.
 
 ## Install
 
