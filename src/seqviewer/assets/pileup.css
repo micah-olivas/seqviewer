@@ -189,6 +189,11 @@ html, body {
     border-right: 5px solid transparent;
     border-top: 8px solid var(--__PREFIX__-flag);
 }
+/* A small bar in the track's own fill, so the key reads as the row it labels. */
+.sv-sw-mf {
+    background: var(--bad);
+    opacity: 0.55;
+}
 .sv-sw-dash {
     width: 0;
     height: 11px;
@@ -359,11 +364,13 @@ html, body {
     fill: var(--__PREFIX__-boundary);
 }
 /* --- Mismatch frequency track ---
-   Optional (PileupView.mismatch_freq): one row, mismatch frequency per
-   position scaled against MISMATCH_TRACK_CEILING rather than 1.0, so a
-   position past that ceiling draws at full height instead of at a sliver of
-   it.  Sits directly under the features track, sharing its columns, so a
-   spike can be read against whatever it falls inside above it. */
+   Always drawn: one row, disagreement with the reference per
+   position on a log scale between MISMATCH_TRACK_FLOOR and 1.0, so a
+   sub-percent noise floor and a dominant variant are both legible in one row.
+   Gridlines mark 1% and 10%; the upper one is the flag threshold, which the
+   page used to state in a separate row of triangles.  Sits directly under the
+   features track, sharing its columns, so a spike can be read against whatever
+   it falls inside above it. */
 .sv-mf {
     display: block;
     margin-bottom: 5px;
@@ -375,4 +382,16 @@ html, body {
 .sv-mf-base {
     stroke: var(--border);
     stroke-width: 1;
+}
+.sv-mf-grid {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+.sv-mf-markbg {
+    fill: var(--__PREFIX__-bg);
+}
+.sv-mf-mark {
+    font: 8px var(--mono);
+    fill: var(--muted);
 }

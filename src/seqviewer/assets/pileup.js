@@ -55,8 +55,11 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var refColor = P.ref;
   var consMatchColor = matchColor;
   var baseColors = {'A': P.a, 'T': P.t, 'C': P.c, 'G': P.g};
-  // Flagged columns: positions where >10% of reads disagree with reference.
-  // Falls back to consensus-derived mismatches when flaggedCols not provided.
+  // Flagged columns: positions past the flag threshold, from
+  // summary.flagged_columns. Used only for the off-screen arrows now -- the
+  // mismatch track above the reference draws the magnitude itself, so the
+  // separate row of triangles that used to say "past the threshold here" is
+  // gone. Falls back to consensus-derived mismatches when not provided.
   var mismatchCols = flaggedCols || [];
   if (!flaggedCols) {
     for (var _mi = 0; _mi < cons.length; _mi++) {
@@ -64,7 +67,6 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       if (_ch !== '.' && _ch !== '-') mismatchCols.push(_mi);
     }
   }
-  var triRowH = mismatchCols.length > 0 ? 13 : 0;
   function isVector(col) {
     return flanks && (col < flanks[0] || col >= nCols - flanks[1]);
   }
@@ -72,7 +74,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     return isVector(col) ? vectorMatchColor : matchColor;
   }
   // --- Ruler ---
-  var rulerH = 14 + triRowH;
+  var rulerH = 14;
   // The flank tint stops above the reads. Run down the full height it sits
   // behind every row at a value close to the match colour, so a row has to be
   // read through it and the two greys compete. Over the tracks alone it still
@@ -100,7 +102,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var labelColor = P['tick-label'];
     var boundaryColor = P.boundary;
     rc.clearRect(0, 0, canvasW, rulerH);
-    var tickBottom = rulerH - triRowH;
+    var tickBottom = rulerH;
     // The regions are named by the band above the track now, not by text
     // floating here, so this only draws their boundaries.
     var tickRowY = 0;
@@ -132,22 +134,6 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       } else if ((i + 1) % 50 === 0) {
         rc.strokeStyle = tickColor;
         rc.beginPath(); rc.moveTo(x, tickBottom - 3); rc.lineTo(x, tickBottom); rc.stroke();
-      }
-    }
-    // --- Mismatch triangles (pointing down toward ref) ---
-    if (mismatchCols.length > 0) {
-      var triH = 10, triW = Math.max(cellW * 2, 9);
-      for (var _ti = 0; _ti < mismatchCols.length; _ti++) {
-        var mc = mismatchCols[_ti];
-        rc.fillStyle = baseColors[cons[mc]] || P.flag;
-        var cx = mc * cellW + cellW / 2;
-        var ty = tickBottom + 1;
-        rc.beginPath();
-        rc.moveTo(cx - triW / 2, ty);
-        rc.lineTo(cx + triW / 2, ty);
-        rc.lineTo(cx, ty + triH);
-        rc.closePath();
-        rc.fill();
       }
     }
   }

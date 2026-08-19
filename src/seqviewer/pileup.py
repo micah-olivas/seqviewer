@@ -85,10 +85,11 @@ class PileupView:
     set it False for a construct where a protein readout would be meaningless.
     Nothing is translated when there is no focus region to translate.
 
-    ``mismatch_freq`` draws a track below the features showing, per reference
-    position, what share of a group's shown reads disagree with the reference
-    there.  Off by default: it is another row of vertical space on a page that
-    is often already tall, worth spending only when asked for.
+    A track below the features shows, per reference position, what share of a
+    group's covering reads disagree with the reference there, on a log scale
+    marked at 1% and 10%.  It is always drawn: it replaced a row of flag
+    triangles in the ruler that was itself unconditional, and it is the page's
+    only account of disagreement, so gating it would lose that by default.
     """
 
     title: str
@@ -100,7 +101,6 @@ class PileupView:
     features: List[Feature] = field(default_factory=list)
     ref_len: Optional[int] = None
     translate: bool = True
-    mismatch_freq: bool = False
     theme: Theme = field(default_factory=Theme)
 
     @classmethod

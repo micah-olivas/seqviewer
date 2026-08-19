@@ -23,6 +23,8 @@ from .annotate import region_band_svg as _region_band_svg
 from .annotate import region_spans as _region_spans
 from .annotate import track_svg as _track_svg
 from .annotate import mismatch_track_svg as _mismatch_track_svg
+from .summary import flagged_columns as _flagged_columns
+from .summary import mismatch_fractions as _mismatch_fractions
 from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
 from .codon import translate as _translate
 from .pileup import PileupView
@@ -300,39 +302,33 @@ def render(view: PileupView) -> str:
                     chars.append(base_char.upper())
             rows_encoded.append("".join(chars))
 
-        # Build consensus from pileup: majority base at each position.
-        # Also track positions where >10% of reads disagree with the
-        # reference — these are flagged in the ruler as problem positions.
+        # The consensus is the majority called base per position; disagreement is
+        # a different question and is not recomputed here.  Both the track below
+        # and seqviewer.summary read one definition, in summary.mismatch_fractions,
+        # so the page and a summary of the same reads cannot report different
+        # numbers for the same column.  They did while each computed its own: the
+        # old loop counted only called bases, so a column half of whose reads had
+        # deleted the base read as perfectly clean.
         from collections import Counter
         consensus_encoded = []
-        flagged_cols = []
-        mismatch_freqs = []
         ref_seq = g["ref_seq"]
-        _MISMATCH_THRESHOLD = 0.10
         for col_idx in range(ref_len):
             counts = Counter()
             for row in g["pileup_rows"]:
                 base, _ = row[col_idx]
                 if base != "-":
                     counts[base.upper()] += 1
-            total = sum(counts.values())
-            freq = 0.0
             if counts:
                 cons_base = counts.most_common(1)[0][0]
-                if cons_base == ref_seq[col_idx].upper():
-                    consensus_encoded.append(".")
-                else:
-                    consensus_encoded.append(cons_base)
-                # Flag if >10% of reads differ from reference
-                ref_base = ref_seq[col_idx].upper()
-                ref_count = counts.get(ref_base, 0)
-                freq = (total - ref_count) / total if total else 0.0
-                if freq > _MISMATCH_THRESHOLD:
-                    flagged_cols.append(col_idx)
+                consensus_encoded.append(
+                    "." if cons_base == ref_seq[col_idx].upper() else cons_base
+                )
             else:
                 consensus_encoded.append("-")
-            mismatch_freqs.append(freq)
         consensus_str = "".join(consensus_encoded)
+
+        mismatch_freqs = _mismatch_fractions(g["pileup_rows"], ref_seq)
+        flagged_cols = _flagged_columns(g["pileup_rows"], ref_seq)
         any_flags = any_flags or bool(flagged_cols)
 
         # Translate the focus region, when the view asks for a protein readout.
@@ -396,10 +392,9 @@ def render(view: PileupView) -> str:
         # Drawn only when asked for: another row of vertical space, spent only
         # when the page is worth it.  Sits right under the features track, so a
         # spike in disagreement can be read against what it falls in above it.
-        mismatch_svg = (
-            _mismatch_track_svg(mismatch_freqs, cell_w=cell_w)
-            if view.mismatch_freq else ""
-        )
+        # Always drawn.  It replaced the row of flag triangles, which was
+        # unconditional, so gating it would drop that signal by default.
+        mismatch_svg = _mismatch_track_svg(mismatch_freqs, cell_w=cell_w)
         mismatch_h = _MISMATCH_TRACK_HEIGHT + 5 if mismatch_svg else 0
 
         if n_rows == 0:
@@ -527,11 +522,13 @@ def render(view: PileupView) -> str:
     clusters.append(("cells", "".join(cells)))
 
     marks = []
-    if any_flags:
-        marks.append(
-            '<span class="sv-kitem"><i class="sv-sw sv-sw-tri"></i>'
-            '&gt;10% disagree</span>'
-        )
+    # The mismatch row is always drawn, so the key always explains its scale.
+    # It replaced a row of triangles that only appeared when something was
+    # flagged, which meant the key changed shape between pages.
+    marks.append(
+        '<span class="sv-kitem"><i class="sv-sw sv-sw-mf"></i>'
+        'disagreement, log scale to 1% and 10%</span>'
+    )
     if has_flanks:
         marks.append(
             '<span class="sv-kitem"><i class="sv-sw sv-sw-dash"></i>'

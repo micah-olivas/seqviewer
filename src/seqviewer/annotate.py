@@ -14,6 +14,7 @@ glyph cannot land a pixel off the column it describes.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -25,7 +26,8 @@ __all__ = [
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
     "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
-    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_CEILING",
+    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_FLOOR",
+    "MISMATCH_TRACK_MARKS", "mismatch_level",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -502,16 +504,37 @@ def region_band_svg(flanks, ref_len: int, cell_w: Optional[int] = None,
     return "".join(parts)
 
 
-#: Height of the mismatch-frequency track, and the frequency its scale tops
-#: out at.  An earlier version split the range into several stacked brackets
-#: so a background noise floor near zero and a real double-digit-percent
-#: variant could both register; against real amplicon runs, disagreement
-#: past 1% turned out to be rare and, when present, already unambiguous, so
-#: the brackets above 1% sat empty.  One row scaled to 0-1% keeps the pixels
-#: that were doing the work; a position past 1% is drawn at full height
-#: rather than given more of them.
-MISMATCH_TRACK_HEIGHT = 16
-MISMATCH_TRACK_CEILING = 0.01
+#: Height of the mismatch track.  Taller than a strip because it is now the
+#: page's only mismatch row: the flag triangles that used to sit in the ruler
+#: said "past 10% here" in a separate row, and this row has to carry that too.
+MISMATCH_TRACK_HEIGHT = 26
+
+#: Lowest fraction the scale resolves.  Below this a position draws at the
+#: baseline.  Set an order of magnitude under the per-base error rate of the runs
+#: these pages are made for -- around 0.3% on the amplicon libraries measured --
+#: so a real noise floor still has height to be seen against.
+MISMATCH_TRACK_FLOOR = 0.001
+
+#: Fractions drawn as gridlines, and where the scale is pinned.  A linear scale
+#: cannot show a 0.3% noise floor and a 60% variant in one row: at 0-100% the
+#: noise is a sub-pixel line, and clipping at 1% makes 1% and 60% identical.
+#: A log scale between the floor and 1.0 puts these two marks at even thirds.
+MISMATCH_TRACK_MARKS = (0.01, 0.10)
+
+
+def mismatch_level(freq: float, floor: float = MISMATCH_TRACK_FLOOR) -> float:
+    """Map a disagreement fraction onto 0-1 of the track's height.
+
+    Logarithmic between *floor* and 1.0, so each decade gets equal room. With the
+    default floor, 0.1% sits on the baseline, 1% a third of the way up, 10% two
+    thirds, and 100% at the top.
+    """
+    if freq <= floor or floor <= 0:
+        return 0.0
+    if freq >= 1.0:
+        return 1.0
+    log_floor = math.log10(floor)
+    return (math.log10(freq) - log_floor) / (0.0 - log_floor)
 
 
 def mismatch_track_svg(
@@ -519,20 +542,24 @@ def mismatch_track_svg(
     cell_w: Optional[int] = None,
     prefix: str = "sv-mf",
     height: int = MISMATCH_TRACK_HEIGHT,
-    ceiling: float = MISMATCH_TRACK_CEILING,
+    floor: float = MISMATCH_TRACK_FLOOR,
+    marks: Sequence[float] = MISMATCH_TRACK_MARKS,
 ) -> str:
-    """Per-position mismatch frequency as a step histogram, one bar per base.
+    """Per-position disagreement as one step histogram, one bar per base.
 
-    *freqs* is one fraction per reference position: the share of reads called
-    there that disagree with the reference.  Each is scaled against *ceiling*
-    rather than against 1.0, so a position at or above *ceiling* draws at full
-    height instead of at whatever sliver its true value would occupy on a
-    0-100% scale.
+    *freqs* is one fraction per reference position, as
+    :func:`seqviewer.summary.mismatch_fractions` computes it. Height is
+    logarithmic between *floor* and 1.0 -- see :func:`mismatch_level` -- so a
+    sub-percent noise floor and a dominant variant are both legible in one row.
 
-    A run of equal fractions collapses to a single path segment rather than
-    one command per base, which is what keeps a mostly-clean reference from
-    emitting one command per column.  Returns "" for an empty reference, the
-    convention :func:`track_svg` uses for a track with nothing to draw.
+    *marks* are drawn as gridlines and labelled, which is what lets a bar be read
+    as a magnitude rather than just compared with its neighbours. The topmost mark
+    is where the flag threshold sits, so this row carries what the separate row of
+    flag triangles used to say.
+
+    A run of equal fractions collapses to one path segment rather than a command
+    per base, which keeps a mostly-clean reference from emitting one per column.
+    Returns "" for an empty reference, the convention :func:`track_svg` uses.
     """
     n = len(freqs)
     if not n:
@@ -543,17 +570,35 @@ def mismatch_track_svg(
     parts = [
         f'<svg class="{prefix}" width="{width:.0f}" height="{height}" '
         f'viewBox="0 0 {width:.0f} {height}" role="img" '
-        f'aria-label="mismatch frequency by position">'
+        f'aria-label="disagreement with the reference by position">'
     ]
+
+    # Gridlines first, so the bars read over them.
+    for mark in marks:
+        y = height - mismatch_level(mark, floor) * height
+        parts.append(
+            f'<line class="{prefix}-grid" x1="0" y1="{y:.1f}" '
+            f'x2="{width:.0f}" y2="{y:.1f}"/>'
+        )
+        # Punched out of the page ground rather than drawn over the bars: the
+        # left edge of the track is data, not margin.
+        label = f"{mark:.0%}"
+        parts.append(
+            f'<rect class="{prefix}-markbg" x="0" y="{y - 9:.1f}" '
+            f'width="{len(label) * 5 + 4}" height="9"/>'
+        )
+        parts.append(
+            f'<text class="{prefix}-mark" x="2" y="{y - 1.5:.1f}">{label}</text>'
+        )
+
     d = [f"M0,{height}"]
     i = 0
     while i < n:
         j = i
         while j < n and freqs[j] == freqs[i]:
             j += 1
-        level = max(0.0, min(1.0, freqs[i] / ceiling)) if ceiling > 0 else 0.0
+        y = height - mismatch_level(freqs[i], floor) * height
         x0, x1 = i * cell_w, j * cell_w
-        y = height - level * height
         d.append(f"L{x0:.1f},{y:.1f}")
         d.append(f"L{x1:.1f},{y:.1f}")
         i = j

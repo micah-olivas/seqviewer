@@ -159,9 +159,16 @@ thresholds produced it and what was called.
 
 Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
 what draws the boundary lines, the translation rows, and the frame that variants
-are classified against. `--mismatch-freq` adds a track below the features
-showing, per position, what share of the shown reads disagree with the reference
-there. `--help` lists the rest.
+are classified against. `--order` sets the row order; `cluster` is hierarchical,
+average linkage over what each read disagrees about, which groups a
+subpopulation that the cheaper `mismatch` ordering splits when a read carries an
+unrelated error further left. `--help` lists the rest.
+
+A track above the reference shows, per position, the share of covering reads
+that disagree with it, on a log scale marked at 1% and 10%. A deletion counts as
+disagreement, so a column half the reads have deleted reads as half disagreeing
+rather than as clean. `seqviewer.summary.mismatch_fractions` is the one
+definition of that number, and both pages read it.
 
 ## Reference and Feature
 

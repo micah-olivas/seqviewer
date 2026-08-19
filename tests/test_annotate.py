@@ -5,9 +5,12 @@ Pure geometry over Feature records, so none of this needs a browser or Biopython
 
 import re
 
+import pytest
+
 from seqviewer.annotate import (
-    LANE_GAP, LANE_HEIGHT, MISMATCH_TRACK_CEILING, MISMATCH_TRACK_HEIGHT,
-    cell_width, mismatch_track_svg, plan_track, track_style, track_svg,
+    LANE_GAP, LANE_HEIGHT, MISMATCH_TRACK_FLOOR, MISMATCH_TRACK_HEIGHT,
+    MISMATCH_TRACK_MARKS, cell_width, mismatch_level, mismatch_track_svg,
+    plan_track, track_style, track_svg,
 )
 from seqviewer.construct import Feature
 
@@ -322,27 +325,41 @@ def test_a_run_of_equal_frequencies_collapses_to_one_segment():
     assert spike.count("L") > flat.count("L")
 
 
-def test_a_frequency_at_the_ceiling_is_drawn_at_full_height():
-    svg = mismatch_track_svg([MISMATCH_TRACK_CEILING], cell_w=4)
-    assert "L0.0,0.0" in svg
+def test_total_disagreement_is_drawn_at_full_height():
+    assert "L0.0,0.0" in mismatch_track_svg([1.0], cell_w=4)
 
 
-def test_a_frequency_past_the_ceiling_is_clamped_not_scaled_further():
-    """A position at 2x the ceiling should look identical to one at 100x it --
-    both are already the most extreme thing the track draws.
+def test_the_marks_land_at_even_fractions_of_the_height():
+    """A decade per third is what lets one row hold a noise floor and a variant.
+
+    With a floor of 0.1%, the decades to 100% are 1% and 10%, so the two marks
+    sit at a third and two thirds.
     """
-    just_over = mismatch_track_svg([MISMATCH_TRACK_CEILING * 2], cell_w=4)
-    way_over = mismatch_track_svg([MISMATCH_TRACK_CEILING * 100], cell_w=4)
-    assert just_over == way_over
+    assert MISMATCH_TRACK_MARKS == (0.01, 0.10)
+    assert mismatch_level(0.01) == pytest.approx(1 / 3)
+    assert mismatch_level(0.10) == pytest.approx(2 / 3)
+    assert mismatch_level(1.0) == 1.0
 
 
-def test_a_frequency_below_the_ceiling_is_scaled_within_it():
-    svg = mismatch_track_svg([MISMATCH_TRACK_CEILING / 2], cell_w=4,
-                             height=20)
-    assert "L0.0,10.0" in svg      # halfway to the ceiling, halfway up
+def test_the_scale_separates_magnitudes_a_ceiling_would_flatten():
+    """The old scale clipped at 1%, so 1% and 60% drew identically."""
+    assert mismatch_level(0.01) < mismatch_level(0.15) < mismatch_level(0.60)
+
+
+def test_a_fraction_at_or_under_the_floor_is_drawn_at_the_baseline():
+    assert mismatch_level(MISMATCH_TRACK_FLOOR) == 0.0
+    assert mismatch_level(MISMATCH_TRACK_FLOOR / 10) == 0.0
+    assert mismatch_level(0.0) == 0.0
 
 
 def test_zero_and_negative_frequencies_draw_nothing():
     svg = mismatch_track_svg([0.0, -0.5], cell_w=4, height=20)
     assert "L0.0,0.0" not in svg
     assert "L8.0,0.0" not in svg
+
+
+def test_the_marks_are_drawn_and_labelled():
+    svg = mismatch_track_svg([0.0] * 10, cell_w=4)
+    assert svg.count("sv-mf-grid") == len(MISMATCH_TRACK_MARKS)
+    assert ">1%<" in svg
+    assert ">10%<" in svg

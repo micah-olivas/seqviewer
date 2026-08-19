@@ -309,14 +309,40 @@ def test_reads_are_encoded_compactly():
     assert '"' + "." * 100 + '"' in html
 
 
-# --- Mismatch frequency track ----------------------------------------------
+# --- Mismatch track --------------------------------------------------------
 
-def test_the_mismatch_track_is_off_by_default():
-    assert 'class="sv-mf"' not in render(_view())
+def test_the_mismatch_track_is_always_drawn():
+    """It replaced the ruler's flag triangles, which were unconditional.
+
+    Gating it would leave a page with no account of disagreement by default.
+    """
+    assert 'class="sv-mf"' in render(_view())
 
 
-def test_asking_for_it_draws_the_track():
-    assert 'class="sv-mf"' in render(_view(mismatch_freq=True))
+def test_the_ruler_no_longer_draws_a_separate_row_of_flag_triangles():
+    """One tall row, not several. The magnitude is in the track."""
+    from seqviewer.summary import DEFAULT_FLAG_THRESHOLD
+
+    ref = "ACGT" * 25
+    rows = [[(b, True) for b in ref], [("A", b == "A") for b in ref]]
+    html = render(_view(groups=[PileupGroup("g", ref, rows, n_reads=2)]))
+    assert "triRowH" not in html
+    assert DEFAULT_FLAG_THRESHOLD == 0.10
+
+
+def test_the_page_and_a_summary_agree_about_disagreement():
+    """Both read summary.mismatch_fractions, so they cannot report different
+    numbers for the same column. They did while each computed its own: the old
+    loop counted only called bases, so a column where half the reads had deleted
+    the base read as perfectly clean.
+    """
+    from seqviewer.summary import mismatch_fractions
+
+    ref = "ACGTACGT"
+    deleted = [(ref[i], True) if i != 2 else ("-", True) for i in range(8)]
+    clean = [(b, True) for b in ref]
+    rows = [deleted, deleted, clean, clean]
+    assert mismatch_fractions(rows, ref)[2] == 0.5
 
 
 def test_the_track_is_positioned_after_the_features_track():
@@ -326,7 +352,7 @@ def test_the_track_is_positioned_after_the_features_track():
     from seqviewer.construct import Feature
 
     ref = "ACGT" * 25
-    html = render(_view(mismatch_freq=True, features=[Feature("CDS", 0, 10, label="f")],
+    html = render(_view(features=[Feature("CDS", 0, 10, label="f")],
                         ref_len=len(ref)))
     annot_pos = html.index('class="sv-annot"')
     mf_pos = html.index('class="sv-mf"')
@@ -336,8 +362,7 @@ def test_the_track_is_positioned_after_the_features_track():
 
 def test_a_group_with_no_rows_draws_no_pileup_at_all():
     """The empty-group notice replaces the whole pileup, mismatch track included."""
-    html = render(_view(mismatch_freq=True,
-                        groups=[PileupGroup("g", "ACGT", [], n_reads=7)]))
+    html = render(_view(groups=[PileupGroup("g", "ACGT", [], n_reads=7)]))
     assert 'class="sv-mf"' not in html
     assert "No aligned reads available" in html
 

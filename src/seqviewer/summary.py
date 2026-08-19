@@ -51,6 +51,7 @@ __all__ = [
     "SummaryView",
     "Variant",
     "flagged_columns",
+    "mismatch_fractions",
     "summarize_group",
 ]
 
@@ -369,21 +370,25 @@ def summarize_group(
     )
 
 
-def flagged_columns(
-    rows: Sequence[Row],
-    ref_seq: str,
-    threshold: float = DEFAULT_FLAG_THRESHOLD,
-) -> List[int]:
-    """Reference positions where more than *threshold* of covering reads disagree.
+def mismatch_fractions(rows: Sequence[Row], ref_seq: str) -> List[float]:
+    """Per position, the share of covering reads that disagree with the reference.
 
-    This is the pileup page's own "worth a look" statistic, as a pure function of
-    a grid and a reference.  It lives here rather than inline in a renderer so
-    that the pileup's ruler flags and this module's variant calls are the same
-    number computed once — two implementations would disagree on some file and
-    neither would be obviously wrong.
+    The one definition of disagreement in the package.  Both the pileup's track
+    and this module's calls read it, so they cannot report different numbers for
+    the same column — which they did while each computed its own.
 
-    Disagreement counts a deletion as well as a substitution, and is measured
-    against reads that reached the position rather than against every read.
+    Two choices in it, both load-bearing:
+
+    * **A deletion is disagreement.** Counting only called bases makes a column
+      where half the reads deleted the base read as perfectly clean, because the
+      deleted reads leave both the numerator and the denominator.
+    * **The denominator is reads that reached the position**, not every read in
+      the group, so a position at the edge of a short read's span is not diluted
+      by reads that never covered it.
+
+    Absence of coverage is neither: a ``"-"`` outside a read's own covered span
+    contributes to nothing.  Separating that from a deletion is what
+    :func:`_covered_span` is for.
     """
     ref = ref_seq.upper()
     n = len(ref)
@@ -401,9 +406,23 @@ def flagged_columns(
                 agree[i] += 1
 
     return [
-        i for i in range(n)
-        if covering[i] and (covering[i] - agree[i]) / covering[i] > threshold
+        (covering[i] - agree[i]) / covering[i] if covering[i] else 0.0
+        for i in range(n)
     ]
+
+
+def flagged_columns(
+    rows: Sequence[Row],
+    ref_seq: str,
+    threshold: float = DEFAULT_FLAG_THRESHOLD,
+) -> List[int]:
+    """Reference positions where more than *threshold* of covering reads disagree.
+
+    The "worth a look" positions, thresholded out of
+    :func:`mismatch_fractions` so the boolean and the magnitude cannot disagree.
+    """
+    fractions = mismatch_fractions(rows, ref_seq)
+    return [i for i, f in enumerate(fractions) if f > threshold]
 
 
 def _classify(

@@ -37,6 +37,7 @@ import sys
 from pathlib import Path
 
 from .align import Read, grid_from_reads
+from .cluster import cluster_rows
 from .genbank import load_reference
 from .pileup import PileupGroup, PileupView
 from .render import render
@@ -248,7 +249,19 @@ def by_position(rows):
     return sorted(rows, key=lambda row: (lambda c, f: (f, -c))(*_extent(row)))
 
 
-ORDERINGS = {"length": by_length, "position": by_position, "mismatch": cluster}
+#: Row orderings, by the name --order takes.  Each is called with the grid and
+#: the reference; only the clustering one needs the second.
+#:
+#: "mismatch" and "cluster" both aim to put similar reads together and differ in
+#: how: "mismatch" sorts the pattern as a string, which is cheap but is decided by
+#: the leftmost difference, so one read with an early sequencing error sorts
+#: between two halves of a subpopulation.  "cluster" builds the dendrogram.
+ORDERINGS = {
+    "length": lambda rows, ref: by_length(rows),
+    "position": lambda rows, ref: by_position(rows),
+    "mismatch": lambda rows, ref: cluster(rows),
+    "cluster": lambda rows, ref: cluster_rows(rows, ref),
+}
 
 
 def focus_flanks(reference, label):
@@ -318,17 +331,19 @@ def build_parser():
                              "-1 = reference midpoint")
     parser.add_argument("--order", choices=sorted(ORDERINGS), default="length",
                         help="row order: length (longest first, the default), "
-                             "position (leftmost first), or mismatch "
-                             "(seqviewer's clustering, which blocks "
-                             "subpopulations together)")
+                             "position (leftmost first), mismatch (sorts the "
+                             "mismatch pattern as a string), or cluster "
+                             "(hierarchical, average linkage over what each "
+                             "read disagrees about \u2014 groups a "
+                             "subpopulation that mismatch splits when a read "
+                             "carries an unrelated early error)")
     parser.add_argument("--no-circular", action="store_true",
                         help="align against one copy even if the reference is "
                              "circular, discarding origin-crossing segments")
     parser.add_argument("--mismatch-freq", action="store_true",
-                        help="draw a per-position mismatch-frequency track "
-                             "below the features, showing what share of the "
-                             "shown reads disagree with the reference at "
-                             "each base")
+                        help="accepted and ignored: the mismatch track is now "
+                             "always drawn, having replaced the row of flag "
+                             "triangles. Kept so existing commands still run")
     parser.add_argument("--ref-name",
                         help="name for the reference, overriding what the file "
                              "carries (a GenBank/SnapGene file's declared name, "
@@ -421,7 +436,7 @@ def main(argv=None):
             rows = [fold(row, len(reference)) for row in rows]
         # grid_from_reads has already clustered by mismatch pattern; reorder
         # unless that is what was asked for.
-        rows = ORDERINGS[args.order](rows)
+        rows = ORDERINGS[args.order](rows, reference.seq)
         covered = sum(1 for i in range(len(reference))
                       if any(row[i][0] != "-" for row in rows))
         of_seen = f", sampled from {seen:,}" if seen > len(reads) else ""
@@ -449,7 +464,6 @@ def main(argv=None):
         flanks=focus_flanks(reference, args.insert),
         features=reference.features,
         ref_len=len(reference),
-        mismatch_freq=args.mismatch_freq,
     )
     log(f"flanks: {view.flanks} | {len(view.features)} features drawn")
     out.write_text(render(view))
