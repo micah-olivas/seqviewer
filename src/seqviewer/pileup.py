@@ -35,6 +35,17 @@ class PileupGroup:
     fraction: float = 0.0
     status: str = ""
     highlighted: bool = False
+    wild_type: str = ""
+    """The unmutated sequence this group's reference was derived from, drawn as
+    a row of its own between the reference and the consensus.
+
+    In a mutational library every reference is the parent carrying one designed
+    change, so the reference cannot show that change -- it *is* the change, and
+    reads matching it agree everywhere, saying least exactly where the interest
+    is.  Putting the parent beside it makes the designed difference the one
+    column where the two disagree.
+
+    Must be as long as ``ref_seq``.  Empty draws no row."""
 
     def __post_init__(self) -> None:
         for i, row in enumerate(self.rows):
@@ -43,6 +54,11 @@ class PileupGroup:
                     f"group {self.name!r}: row {i} is {len(row)} cells wide but "
                     f"the reference is {len(self.ref_seq)} bases"
                 )
+        if self.wild_type and len(self.wild_type) != len(self.ref_seq):
+            raise ValueError(
+                f"group {self.name!r}: wild_type is {len(self.wild_type)} bases "
+                f"but the reference is {len(self.ref_seq)}"
+            )
 
 
 @dataclass

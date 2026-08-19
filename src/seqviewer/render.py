@@ -157,6 +157,7 @@ def render(view: PileupView) -> str:
             "is_recoverable": g.highlighted,
             "ref_seq": g.ref_seq,
             "pileup_rows": g.rows,
+            "wild_type": g.wild_type,
         }
         for g in view.groups
     ]
@@ -348,9 +349,19 @@ def render(view: PileupView) -> str:
             cons_protein = _translate(consensus_dna[_ins_start:_ins_end])
             ref_protein = _translate(ref_seq[_ins_start:_ins_end])
 
+        # The wild-type row is encoded against the reference the same way the
+        # reads are, so the designed change shows as the one column where the
+        # parent disagrees with the variant built from it.
+        wt_seq = g.get("wild_type") or ""
+        wt_str = "".join(
+            "." if wt_seq[i].upper() == ref_seq[i].upper() else wt_seq[i]
+            for i in range(min(len(wt_seq), ref_len))
+        ) if wt_seq else ""
+
         ref_seq_js = _json.dumps(ref_seq)
         rows_js = _json.dumps(rows_encoded)
         cons_js = _json.dumps(consensus_str)
+        wt_js = _json.dumps(wt_str)
         flagged_js = _json.dumps(flagged_cols)
         n_rows = len(rows_encoded)
 
@@ -423,7 +434,8 @@ def render(view: PileupView) -> str:
                 f'var refAA={ref_protein_js};'
                 f'var consAA={cons_protein_js};'
                 f'var flaggedCols={flagged_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h});'
+                f'var wt={wt_js};'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h},wt);'
                 f'}})();'
                 f'</script>'
             )

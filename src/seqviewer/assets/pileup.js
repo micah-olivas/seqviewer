@@ -1,4 +1,4 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, wt) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
@@ -15,6 +15,12 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var cellH = nRows < 100 ? 4 : nRows < 400 ? 3 : 2;
   var refH = Math.max(cellH, 6);
   var consH = refH;
+  // The parent sequence, when the caller supplied one: another row the
+  // height of the reference, sitting directly under it so the designed
+  // change reads as the column where the two disagree.
+  var hasWT = !!(wt && wt.length);
+  var wtH = hasWT ? refH : 0;
+  var wtGap = hasWT ? 4 : 0;
   var gap = 4;
   var totalW = nCols * cellW;
   var dpr = window.devicePixelRatio || 1;
@@ -34,7 +40,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var aaEndPx = hasAA ? flanks[0] * cellW + refAA.length * aaCodonW : 0;
   var canvasW = Math.max(totalW, aaEndPx);
 
-  var pileupH = refH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0);
+  var pileupH = refH + wtGap + wtH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0);
   canvas.width = canvasW * dpr;
   canvas.height = pileupH * dpr;
   canvas.style.width = canvasW + 'px';
@@ -67,6 +73,22 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   }
   // --- Ruler ---
   var rulerH = 14 + triRowH;
+  // The flank tint stops above the reads. Run down the full height it sits
+  // behind every row at a value close to the match colour, so a row has to be
+  // read through it and the two greys compete. Over the tracks alone it still
+  // says which span is which, which is all it was ever for; the reads get the
+  // dashed boundaries instead, which cost no contrast.
+  if (scrollId) {
+    var scrollForRegions = document.getElementById(scrollId);
+    if (scrollForRegions) {
+      var regionEls = scrollForRegions.querySelectorAll('.sv-region');
+      var headerH = (annotH || 0) + (mismatchH || 0) + rulerH;
+      for (var ri = 0; ri < regionEls.length; ri++) {
+        regionEls[ri].style.bottom = 'auto';
+        regionEls[ri].style.height = headerH + 'px';
+      }
+    }
+  }
   if (rulerCanvas) {
     rulerCanvas.width = canvasW * dpr;
     rulerCanvas.height = rulerH * dpr;
@@ -130,7 +152,8 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }
   }
   // --- HTML row labels ---
-  var consY = refH + gap;
+  var wtY = refH + wtGap;
+  var consY = refH + wtGap + wtH + gap;
   var readsY = consY + consH + gap;
   if (labelsEl) {
     labelsEl.innerHTML = '';
@@ -157,6 +180,15 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     refLabel.textContent = 'Ref';
     refLabel.style.height = refH + 'px';
     labelsEl.appendChild(refLabel);
+    if (hasWT) {
+      var wtGapSpacer = document.createElement('span');
+      wtGapSpacer.style.height = wtGap + 'px';
+      labelsEl.appendChild(wtGapSpacer);
+      var wtLabel = document.createElement('span');
+      wtLabel.textContent = 'WT';
+      wtLabel.style.height = wtH + 'px';
+      labelsEl.appendChild(wtLabel);
+    }
     var gapSpacer1 = document.createElement('span');
     gapSpacer1.style.height = gap + 'px';
     labelsEl.appendChild(gapSpacer1);
@@ -194,6 +226,20 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   ctx.fillStyle = refColor;
   for (var i = 0; i < nCols; i++) {
     ctx.fillRect(i * cellW, 0, cellW, refH);
+  }
+  // --- Wild-type row ---
+  if (hasWT) {
+    for (var i = 0; i < wt.length; i++) {
+      var wch = wt[i];
+      if (wch === '.') {
+        ctx.fillStyle = pickMatch(i);
+      } else if (wch === '-') {
+        ctx.fillStyle = gapColor;
+      } else {
+        ctx.fillStyle = baseColors[wch] || P.flag;
+      }
+      ctx.fillRect(i * cellW, wtY, cellW, wtH);
+    }
   }
   // --- Consensus row ---
   for (var i = 0; i < cons.length; i++) {
