@@ -1,4 +1,4 @@
-"""Tests for the wild-type row and the extent of the region tint."""
+"""Tests for the parent row and the extent of the region tint."""
 
 import pytest
 
@@ -23,35 +23,35 @@ def _page(**kw):
 class TestWildTypeRow:
 
     def test_absent_unless_given(self):
-        assert 'var wt="";' in _page().replace("var wt='';", 'var wt="";')
+        assert 'var parent="";' in _page().replace("var parent='';", 'var parent="";')
 
     def test_encoded_against_the_reference(self):
         """A dot where the parent agrees, the parent's base where it does not,
         so the designed change is the one column that stands out."""
         import re
 
-        page = _page(wild_type=WT)
-        encoded = re.search(r'var wt="([^"]*)"', page).group(1)
+        page = _page(parent=WT)
+        encoded = re.search(r'var parent="([^"]*)"', page).group(1)
         assert len(encoded) == len(REF)
         differing = [i for i, c in enumerate(encoded) if c != "."]
         assert differing == [50]
 
     def test_the_row_is_labelled(self):
-        assert "'WT'" in _page(wild_type=WT)
+        assert "'Parent'" in _page(parent=WT)
 
     def test_a_parent_identical_to_the_reference_shows_no_difference(self):
         import re
 
-        page = _page(wild_type=REF)
-        encoded = re.search(r'var wt="([^"]*)"', page).group(1)
+        page = _page(parent=REF)
+        encoded = re.search(r'var parent="([^"]*)"', page).group(1)
         assert set(encoded) == {"."}
 
     def test_the_wrong_length_is_refused(self):
         """A row that does not line up with the reference would put the change
         in the wrong column, which is worse than no row."""
-        with pytest.raises(ValueError, match="wild_type is"):
+        with pytest.raises(ValueError, match="parent is"):
             PileupGroup(name="v1", ref_seq=REF, rows=_rows(),
-                        wild_type=REF[:-5])
+                        parent=REF[:-5])
 
     def test_groups_without_one_still_render(self):
         page = _page()

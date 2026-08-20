@@ -35,7 +35,7 @@ class PileupGroup:
     fraction: float = 0.0
     status: str = ""
     highlighted: bool = False
-    wild_type: str = ""
+    parent: str = ""
     """The unmutated sequence this group's reference was derived from, drawn as
     a row of its own between the reference and the consensus.
 
@@ -54,9 +54,9 @@ class PileupGroup:
                     f"group {self.name!r}: row {i} is {len(row)} cells wide but "
                     f"the reference is {len(self.ref_seq)} bases"
                 )
-        if self.wild_type and len(self.wild_type) != len(self.ref_seq):
+        if self.parent and len(self.parent) != len(self.ref_seq):
             raise ValueError(
-                f"group {self.name!r}: wild_type is {len(self.wild_type)} bases "
+                f"group {self.name!r}: parent is {len(self.parent)} bases "
                 f"but the reference is {len(self.ref_seq)}"
             )
 

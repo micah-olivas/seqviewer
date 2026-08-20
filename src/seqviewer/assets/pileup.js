@@ -1,4 +1,4 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, wt) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
@@ -18,9 +18,9 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   // The parent sequence, when the caller supplied one: another row the
   // height of the reference, sitting directly under it so the designed
   // change reads as the column where the two disagree.
-  var hasWT = !!(wt && wt.length);
-  var wtH = hasWT ? refH : 0;
-  var wtGap = hasWT ? 4 : 0;
+  var hasParent = !!(parent && parent.length);
+  var parentH = hasParent ? refH : 0;
+  var parentGap = hasParent ? 4 : 0;
   var gap = 4;
   var totalW = nCols * cellW;
   var dpr = window.devicePixelRatio || 1;
@@ -40,7 +40,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var aaEndPx = hasAA ? flanks[0] * cellW + refAA.length * aaCodonW : 0;
   var canvasW = Math.max(totalW, aaEndPx);
 
-  var pileupH = refH + wtGap + wtH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0);
+  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0);
   canvas.width = canvasW * dpr;
   canvas.height = pileupH * dpr;
   canvas.style.width = canvasW + 'px';
@@ -152,8 +152,8 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }
   }
   // --- HTML row labels ---
-  var wtY = refH + wtGap;
-  var consY = refH + wtGap + wtH + gap;
+  var parentY = refH + parentGap;
+  var consY = refH + parentGap + parentH + gap;
   var readsY = consY + consH + gap;
   if (labelsEl) {
     labelsEl.innerHTML = '';
@@ -180,14 +180,14 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     refLabel.textContent = 'Ref';
     refLabel.style.height = refH + 'px';
     labelsEl.appendChild(refLabel);
-    if (hasWT) {
-      var wtGapSpacer = document.createElement('span');
-      wtGapSpacer.style.height = wtGap + 'px';
-      labelsEl.appendChild(wtGapSpacer);
-      var wtLabel = document.createElement('span');
-      wtLabel.textContent = 'WT';
-      wtLabel.style.height = wtH + 'px';
-      labelsEl.appendChild(wtLabel);
+    if (hasParent) {
+      var parentGapSpacer = document.createElement('span');
+      parentGapSpacer.style.height = parentGap + 'px';
+      labelsEl.appendChild(parentGapSpacer);
+      var parentLabel = document.createElement('span');
+      parentLabel.textContent = 'Parent';
+      parentLabel.style.height = parentH + 'px';
+      labelsEl.appendChild(parentLabel);
     }
     var gapSpacer1 = document.createElement('span');
     gapSpacer1.style.height = gap + 'px';
@@ -228,9 +228,9 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     ctx.fillRect(i * cellW, 0, cellW, refH);
   }
   // --- Wild-type row ---
-  if (hasWT) {
-    for (var i = 0; i < wt.length; i++) {
-      var wch = wt[i];
+  if (hasParent) {
+    for (var i = 0; i < parent.length; i++) {
+      var wch = parent[i];
       if (wch === '.') {
         ctx.fillStyle = pickMatch(i);
       } else if (wch === '-') {
@@ -238,7 +238,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       } else {
         ctx.fillStyle = baseColors[wch] || P.flag;
       }
-      ctx.fillRect(i * cellW, wtY, cellW, wtH);
+      ctx.fillRect(i * cellW, parentY, cellW, parentH);
     }
   }
   // --- Consensus row ---
