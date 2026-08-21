@@ -85,7 +85,6 @@ html, body {
 }
 .sv-star {
     color: var(--warn);
-    cursor: help;
 }
 .sv-facts {
     font: 0.78rem/1.55 var(--mono);
@@ -93,11 +92,15 @@ html, body {
     font-variant-numeric: tabular-nums;
 }
 /* Each fact explains itself on hover; the cursor is the only standing hint,
-   so the line reads the same as before until someone reaches for it. */
-.sv-fact {
+   so the line reads the same as before until someone reaches for it.
+   Gated on [title], the same way the row labels below are: the cursor is a
+   promise of a tooltip, and an element without one must not make it. The
+   legend's own star is the case that got this wrong -- it is the definition of
+   the mark, so there is nothing for it to explain on hover. */
+.sv-fact[title], .sv-star[title] {
     cursor: help;
 }
-.sv-fact:hover {
+.sv-fact[title]:hover, .sv-star[title]:hover {
     text-decoration: underline dotted;
     text-underline-offset: 0.2em;
 }
