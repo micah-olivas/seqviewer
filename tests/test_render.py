@@ -498,3 +498,73 @@ def test_the_legends_star_carries_no_title_and_so_claims_no_cursor():
     legend = legend[:legend.index("</div>")]
     assert '<span class="sv-star">' in legend
     assert "title=" not in legend
+
+
+# --- Mutation tabs ---------------------------------------------------------
+
+def _tab_block(html):
+    start = html.index("// --- Mutation tabs ---")
+    return html[start:html.index("// --- Region boundary", start)]
+
+
+def test_a_changed_residue_is_named_the_way_a_mutation_is_written():
+    """Ref residue, position, new residue: V50I."""
+    html = render(_view(flanks=(10, 10)))
+    assert "refAA[mi] + (mi + 1) + consAA[mi]" in html
+
+
+def test_the_tab_band_adds_canvas_height_only_when_something_changed():
+    html = render(_view(flanks=(10, 10)))
+    assert "var mutH = mutRows ?" in html
+    assert "+ mutH;" in html
+
+
+def test_tab_rows_are_packed_by_first_fit_and_capped():
+    """A tab is far wider than its 6px codon, so they cannot all share a row."""
+    html = render(_view(flanks=(10, 10)))
+    assert "MAX_TAB_ROWS" in html
+    assert "mutDropped++" in html
+
+
+def test_a_tab_that_will_not_fit_is_counted_rather_than_dropped_silently():
+    html = render(_view(flanks=(10, 10)))
+    assert "not named for want" in html
+
+
+def test_tab_widths_are_computed_rather_than_measured():
+    """The layout must exist before there is a context to measure with, and the
+    face is monospace, so the advance is known.
+    """
+    html = render(_view(flanks=(10, 10)))
+    assert "TAB_ADVANCE" in html
+    assert "name.length * TAB_FONT * TAB_ADVANCE" in html
+
+
+def test_stems_are_drawn_before_the_boxes():
+    """A lower row's stem passes the rows above it, so boxes must occlude."""
+    block = _tab_block(render(_view(flanks=(10, 10))))
+    assert block.index("ctx.moveTo(tab.stemX") < block.index("ctx.fillRect(tab.left")
+
+
+def test_a_tab_face_is_opaque_before_it_is_tinted():
+    """aa-diff-bg is translucent, so tint alone would show the stems through."""
+    block = _tab_block(render(_view(flanks=(10, 10))))
+    assert block.index("P['aa-bg']") < block.index("aaDiffBg")
+
+
+def test_a_stem_stops_at_the_top_of_its_tab_not_its_middle():
+    """Through the middle would strike the text out."""
+    block = _tab_block(render(_view(flanks=(10, 10))))
+    assert "ctx.lineTo(tab.stemX, top - 2)" in block
+    assert "ctx.lineTo(centre, top)" in block
+
+
+def test_the_tab_band_gets_a_gutter_label_carrying_the_count():
+    html = render(_view(flanks=(10, 10)))
+    assert "mutLabel.textContent = 'Changes'" in html
+    assert "mutLabel.title" in html
+
+
+def test_no_tabs_without_the_translation_rows():
+    """There is no residue to name if no reading frame was translated."""
+    assert "var flanks=null;" in render(_view())

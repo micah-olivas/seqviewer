@@ -40,7 +40,47 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var aaEndPx = hasAA ? flanks[0] * cellW + refAA.length * aaCodonW : 0;
   var canvasW = Math.max(totalW, aaEndPx);
 
-  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0);
+  /* Mutation tabs: one per residue the consensus changes, named the way a
+   * mutation is written -- ref residue, position, new residue, so V50I.
+   *
+   * Laid out before the canvas is sized, because how many rows of tabs are
+   * needed decides how tall the canvas has to be. A tab is far wider than the
+   * 6px codon it belongs to, so tabs are packed into rows by first fit and a
+   * stem connects each back to its own codon. Widths are computed here rather
+   * than measured: the face is monospace, so its advance is known, and the
+   * layout has to exist before there is a context to measure with.
+   */
+  var TAB_FONT = 9, TAB_ADVANCE = 0.6, TAB_PAD = 4;
+  var TAB_H = 12, TAB_ROW_GAP = 2, TAB_LEAD = 5, TAB_STEM = 4;
+  var MAX_TAB_ROWS = 4;
+  var mutTabs = [], mutRows = 0, mutDropped = 0;
+  if (hasAA) {
+    var rowEnds = [];
+    for (var mi = 0; mi < refAA.length && mi < consAA.length; mi++) {
+      if (refAA[mi] === consAA[mi]) continue;
+      var name = refAA[mi] + (mi + 1) + consAA[mi];
+      var tabW = name.length * TAB_FONT * TAB_ADVANCE + TAB_PAD * 2;
+      var stemX = flanks[0] * cellW + mi * aaCodonW + aaCodonW / 2;
+      // Keep the tab on the canvas; the stem still points at the real codon.
+      var left = Math.max(0, Math.min(stemX - tabW / 2, canvasW - tabW));
+      var placed = -1;
+      for (var r = 0; r < rowEnds.length; r++) {
+        if (left >= rowEnds[r] + 2) { placed = r; break; }
+      }
+      if (placed < 0) {
+        if (rowEnds.length >= MAX_TAB_ROWS) { mutDropped++; continue; }
+        rowEnds.push(0);
+        placed = rowEnds.length - 1;
+      }
+      rowEnds[placed] = left + tabW;
+      mutTabs.push({name: name, stemX: stemX, left: left, w: tabW, row: placed});
+    }
+    mutRows = rowEnds.length;
+  }
+  var mutH = mutRows ? TAB_LEAD + TAB_STEM + mutRows * TAB_H
+                       + (mutRows - 1) * TAB_ROW_GAP : 0;
+
+  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0) + mutH;
   canvas.width = canvasW * dpr;
   canvas.height = pileupH * dpr;
   canvas.style.width = canvasW + 'px';
@@ -206,6 +246,19 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       consAALabel.textContent = 'Cons AA';
       consAALabel.style.height = aaH + 'px';
       labelsEl.appendChild(consAALabel);
+      if (mutRows) {
+        var mutLabel = document.createElement('span');
+        mutLabel.textContent = 'Changes';
+        mutLabel.style.height = mutH + 'px';
+        var named = mutTabs.length;
+        // Say what was left out rather than let a page look complete when it
+        // is not; the gutter labels already explain themselves on hover.
+        mutLabel.title = named + (named === 1 ? ' residue changes'
+                                             : ' residues change')
+          + (mutDropped ? ', and ' + mutDropped + ' more not named for want '
+                          + 'of room' : '');
+        labelsEl.appendChild(mutLabel);
+      }
     }
   }
   // --- Reference row ---
@@ -319,6 +372,55 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     for (var ai = 1; aaCodonW >= 9 && ai < refAA.length; ai++) {
       var lx = insStart * cellW + ai * aaCodonW;
       ctx.beginPath(); ctx.moveTo(lx, aaY); ctx.lineTo(lx, aaY + aaH * 2 + 2); ctx.stroke();
+    }
+
+    // --- Mutation tabs ---
+    // The AA rows say a residue changed; these say which change it was, in the
+    // notation a person writes it in. A stem ties each tab to its own codon,
+    // because a tab is five times the width of the codon it names and cannot
+    // sit over it.
+    if (mutRows) {
+      var tabTop = aaY + aaH * 2 + 2 + TAB_LEAD;
+      ctx.font = TAB_FONT + 'px SF Mono,Menlo,Consolas,monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      function tabTopOf(tab) {
+        return tabTop + TAB_STEM + tab.row * (TAB_H + TAB_ROW_GAP);
+      }
+      // Stems first, boxes second. A tab on a lower row reaches past the rows
+      // above it, and those tabs are wider than the codon pitch, so the stem
+      // has to pass behind them -- drawing every box after every stem is what
+      // makes it pass behind rather than through.
+      ctx.strokeStyle = aaDiffColor;
+      ctx.lineWidth = 1;
+      for (var ti = 0; ti < mutTabs.length; ti++) {
+        var tab = mutTabs[ti];
+        var top = tabTopOf(tab);
+        var centre = tab.left + tab.w / 2;
+        ctx.beginPath();
+        ctx.moveTo(tab.stemX, aaY + aaH * 2 + 2);
+        // Down to just above the tab, then across if the tab had to shift to
+        // stay on the canvas. Stopping at the top edge rather than the middle
+        // keeps the line out of the text.
+        ctx.lineTo(tab.stemX, top - 2);
+        ctx.lineTo(centre, top);
+        ctx.stroke();
+      }
+      for (var ti = 0; ti < mutTabs.length; ti++) {
+        var tab = mutTabs[ti];
+        var top = tabTopOf(tab);
+        // Opaque ground first, then the tint: aa-diff-bg is a translucent
+        // rgba, so tinting alone would let the stems behind the tab show
+        // through its text.
+        ctx.fillStyle = P['aa-bg'];
+        ctx.fillRect(tab.left, top, tab.w, TAB_H);
+        ctx.fillStyle = aaDiffBg;
+        ctx.fillRect(tab.left, top, tab.w, TAB_H);
+        ctx.strokeStyle = aaDiffColor;
+        ctx.strokeRect(tab.left + 0.5, top + 0.5, tab.w - 1, TAB_H - 1);
+        ctx.fillStyle = aaDiffColor;
+        ctx.fillText(tab.name, tab.left + tab.w / 2, top + TAB_H / 2);
+      }
     }
   }
   // --- Region boundary dashed lines on pileup canvas ---
