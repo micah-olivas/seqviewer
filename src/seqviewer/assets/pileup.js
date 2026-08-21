@@ -92,7 +92,6 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var matchColor = P.match;
   var vectorMatchColor = P.vector;
   var gapColor = P.gap;
-  var refColor = P.ref;
   var consMatchColor = matchColor;
   var baseColors = {'A': P.a, 'T': P.t, 'C': P.c, 'G': P.g};
   // Flagged columns: positions past the flag threshold, from
@@ -262,8 +261,15 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }
   }
   // --- Reference row ---
-  ctx.fillStyle = refColor;
+  // The match colour, not a dark bar of its own. Every cell agreeing with the
+  // reference is drawn in it, so the reference being the same colour says what
+  // the row is: the thing the greys below are agreeing with. A near-black bar
+  // read as a separate kind of thing, and there is only one.
+  //
+  // Region-aware, like the read cells: a flank column takes the vector shade,
+  // so a column is one colour from the reference down through the reads.
   for (var i = 0; i < nCols; i++) {
+    ctx.fillStyle = pickMatch(i);
     ctx.fillRect(i * cellW, 0, cellW, refH);
   }
   // --- Wild-type row ---
