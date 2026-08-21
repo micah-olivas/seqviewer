@@ -24,7 +24,7 @@ from .annotate import region_spans as _region_spans
 from .annotate import track_svg as _track_svg
 from .annotate import mismatch_track_svg as _mismatch_track_svg
 from .summary import flagged_columns as _flagged_columns
-from .summary import mismatch_fractions as _mismatch_fractions
+from .summary import mismatch_counts as _mismatch_counts
 from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
 from .codon import translate as _translate
 from .pileup import PileupView
@@ -110,6 +110,17 @@ _TIERS = (
     ("mismatch", "bad", "▲"),
     ("match", "ok", "●"),
 )
+
+
+def _run_lengths(pairs):
+    """Collapse equal consecutive pairs into ``[run, first, second]`` triples."""
+    runs = []
+    for first, second in pairs:
+        if runs and runs[-1][1] == first and runs[-1][2] == second:
+            runs[-1][0] += 1
+        else:
+            runs.append([1, first, second])
+    return runs
 
 
 def _verdict(status: str, highlighted: bool):
@@ -325,7 +336,8 @@ def render(view: PileupView) -> str:
                 consensus_encoded.append("-")
         consensus_str = "".join(consensus_encoded)
 
-        mismatch_freqs = _mismatch_fractions(g["pileup_rows"], ref_seq)
+        mismatch_pairs = _mismatch_counts(g["pileup_rows"], ref_seq)
+        mismatch_freqs = [d / c if c else 0.0 for d, c in mismatch_pairs]
         flagged_cols = _flagged_columns(g["pileup_rows"], ref_seq)
         any_flags = any_flags or bool(flagged_cols)
 
@@ -357,6 +369,10 @@ def render(view: PileupView) -> str:
         cons_js = _json.dumps(consensus_str)
         parent_js = _json.dumps(parent_str)
         flagged_js = _json.dumps(flagged_cols)
+        # The track's own numbers, for the hover readout.  Run-length encoded
+        # because a mostly-clean reference is long runs of the same pair: a
+        # 1200-base page carries a few hundred triples instead of 2400 numbers.
+        mismatch_runs_js = _json.dumps(_run_lengths(mismatch_pairs))
         n_rows = len(rows_encoded)
 
         # Translation data for canvas rendering
@@ -428,7 +444,8 @@ def render(view: PileupView) -> str:
                 f'var consAA={cons_protein_js};'
                 f'var flaggedCols={flagged_js};'
                 f'var parent={parent_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h},parent);'
+                f'var mmRuns={mismatch_runs_js};'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h},parent,mmRuns);'
                 f'}})();'
                 f'</script>'
             )

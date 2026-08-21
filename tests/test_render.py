@@ -568,3 +568,54 @@ def test_the_tab_band_gets_a_gutter_label_carrying_the_count():
 def test_no_tabs_without_the_translation_rows():
     """There is no residue to name if no reading frame was translated."""
     assert "var flanks=null;" in render(_view())
+
+
+# --- Mismatch track readout ------------------------------------------------
+
+def test_the_track_carries_its_counts_for_the_readout():
+    """A bar's height is a log-scaled fraction, readable as more or less but not
+    as a number, so the number travels alongside it.
+    """
+    html = render(_view())
+    assert "var mmRuns=" in html
+    assert "mmDis[col]" in html and "mmCov[col]" in html
+
+
+def test_the_counts_are_run_length_encoded():
+    """A mostly-clean reference is long runs of the same pair."""
+    from seqviewer.render import _run_lengths
+
+    assert _run_lengths([(0, 3), (0, 3), (1, 3)]) == [[2, 0, 3], [1, 1, 3]]
+    assert _run_lengths([]) == []
+
+
+def test_the_encoded_counts_are_shorter_than_the_positions_they_cover():
+    ref = "ACGT" * 50
+    rows = [[(b, True) for b in ref] for _ in range(4)]
+    html = render(_view(groups=[PileupGroup("g", ref, rows, n_reads=4)]))
+    runs = json.loads(re.search(r"var mmRuns=(\[.*?\]);", html).group(1))
+    assert sum(r[0] for r in runs) == len(ref)
+    assert len(runs) < len(ref)
+
+
+def test_the_readout_reports_reads_and_not_only_a_percentage():
+    """1 of 3 and 100 of 300 are both 33%, and only one of them is noise."""
+    html = render(_view())
+    assert "' of ' + cov + ' read'" in html
+
+
+def test_the_readout_says_so_when_nothing_covers_a_position():
+    assert "no reads cover this position" in render(_view())
+
+
+def test_one_handler_covers_the_track_rather_than_an_element_per_base():
+    """Thousands of titled rects would be thousands of nodes on a plasmid."""
+    html = render(_view())
+    assert "mmSvg.addEventListener('mousemove'" in html
+    assert html.count("mmSvg.addEventListener") == 2      # mousemove, mouseleave
+
+
+def test_the_track_shows_a_crosshair_not_a_help_cursor():
+    """A help cursor on this page means a title is present; here there is none."""
+    css = render(_view())
+    assert "cursor: crosshair;" in css

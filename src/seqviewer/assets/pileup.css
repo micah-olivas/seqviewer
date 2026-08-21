@@ -374,6 +374,10 @@ html, body {
 .sv-mf {
     display: block;
     margin-bottom: 5px;
+    /* Crosshair, not help: the readout is per position, and the cursor
+       says pick one. A help cursor on this page means "there is a title
+       here", which there is not -- the readout is drawn by script. */
+    cursor: crosshair;
 }
 .sv-mf-fill {
     fill: var(--bad);

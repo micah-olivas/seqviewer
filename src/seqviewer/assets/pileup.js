@@ -1,4 +1,4 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent, mmRuns) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
@@ -570,6 +570,56 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   canvas.addEventListener('mouseleave', function() {
     tooltip.style.display = 'none';
   });
+
+  // --- Mismatch track readout ---
+  /* The track shows how much a position disagrees; hovering says how much, in
+   * reads rather than in pixels. A bar's height is a log-scaled fraction, which
+   * is readable as "more" or "less" and not as a number, so the number has to be
+   * available some other way.
+   *
+   * One handler over the whole track rather than an element per base. A
+   * per-position rect with a title would be thousands of nodes on a plasmid, and
+   * the track is already one path for exactly that reason.
+   *
+   * The counts arrive run-length encoded -- a mostly-clean reference is long runs
+   * of the same pair -- and are expanded once here rather than searched per
+   * mouse move.
+   */
+  if (mmRuns && mmRuns.length && scrollId) {
+    var mmHost = document.getElementById(scrollId);
+    var mmSvg = mmHost && mmHost.querySelector('svg.sv-mf');
+    if (mmSvg) {
+      var mmDis = new Array(nCols), mmCov = new Array(nCols), mmAt = 0;
+      for (var mr = 0; mr < mmRuns.length; mr++) {
+        for (var mk = 0; mk < mmRuns[mr][0] && mmAt < nCols; mk++) {
+          mmDis[mmAt] = mmRuns[mr][1];
+          mmCov[mmAt] = mmRuns[mr][2];
+          mmAt++;
+        }
+      }
+      mmSvg.addEventListener('mousemove', function(e) {
+        var r = mmSvg.getBoundingClientRect();
+        var col = Math.floor((e.clientX - r.left) / cellW);
+        if (col < 0 || col >= nCols) { tooltip.style.display = 'none'; return; }
+        var dis = mmDis[col], cov = mmCov[col];
+        var text = regionLabel(col) + 'pos ' + (col + 1) + ': ';
+        if (!cov) {
+          text += 'no reads cover this position';
+        } else {
+          text += dis + ' of ' + cov + ' read' + (cov === 1 ? '' : 's') +
+                  ' disagree' + (dis === 1 ? 's' : '') +
+                  ' (' + (100 * dis / cov).toFixed(dis && dis / cov < 0.1 ? 2 : 1) + '%)';
+        }
+        tooltip.textContent = text;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY - 24) + 'px';
+      });
+      mmSvg.addEventListener('mouseleave', function() {
+        tooltip.style.display = 'none';
+      });
+    }
+  }
 }
 
 /* Mirror horizontal scrolling across every pileup on the page.

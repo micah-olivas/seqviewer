@@ -51,6 +51,7 @@ __all__ = [
     "SummaryView",
     "Variant",
     "flagged_columns",
+    "mismatch_counts",
     "mismatch_fractions",
     "summarize_group",
 ]
@@ -370,12 +371,17 @@ def summarize_group(
     )
 
 
-def mismatch_fractions(rows: Sequence[Row], ref_seq: str) -> List[float]:
-    """Per position, the share of covering reads that disagree with the reference.
+def mismatch_counts(rows: Sequence[Row], ref_seq: str) -> List[Tuple[int, int]]:
+    """Per position, ``(reads disagreeing, reads covering)``.
 
     The one definition of disagreement in the package.  Both the pileup's track
     and this module's calls read it, so they cannot report different numbers for
     the same column — which they did while each computed its own.
+
+    Counts rather than a ratio, because a ratio cannot be reported honestly on
+    its own: 1 of 3 reads and 100 of 300 are both 33%, and only the first is
+    noise.  :func:`mismatch_fractions` divides these when a bare share is what a
+    caller wants.
 
     Two choices in it, both load-bearing:
 
@@ -405,9 +411,18 @@ def mismatch_fractions(rows: Sequence[Row], ref_seq: str) -> List[float]:
             if base != "-" and base.upper() == ref[i]:
                 agree[i] += 1
 
+    return [(covering[i] - agree[i], covering[i]) for i in range(n)]
+
+
+def mismatch_fractions(rows: Sequence[Row], ref_seq: str) -> List[float]:
+    """Per position, the share of covering reads that disagree with the reference.
+
+    :func:`mismatch_counts` divided through, for callers that want the share and
+    not the reads behind it.
+    """
     return [
-        (covering[i] - agree[i]) / covering[i] if covering[i] else 0.0
-        for i in range(n)
+        dis / cov if cov else 0.0
+        for dis, cov in mismatch_counts(rows, ref_seq)
     ]
 
 
