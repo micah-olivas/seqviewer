@@ -9,3 +9,7 @@ venv/
 *.html
 !docs/**/*.html
 .DS_Store
+
+# Written beside every page by seqviewer-pileup, and regenerated each run.
+*.ref.fasta
+*.log.txt
