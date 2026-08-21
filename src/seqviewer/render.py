@@ -76,6 +76,10 @@ _PALETTE = {
         "aa-diff-bg": "rgba(224,49,49,0.10)",
         "aa-bg": "#f8fafc",
         "aa-grid": "#e5e7eb",
+        "tab-ok": "#0f7a52",
+        "tab-ok-bg": "#e8f6ef",
+        "tab-warn": "#a1650a",
+        "tab-warn-bg": "#fdf3e2",
     },
     "dark": {
         "match": "#4a5568",
@@ -95,6 +99,10 @@ _PALETTE = {
         "aa-diff-bg": "rgba(255,107,107,0.18)",
         "aa-bg": "#1e293b",
         "aa-grid": "#334155",
+        "tab-ok": "#35c493",
+        "tab-ok-bg": "#14312a",
+        "tab-warn": "#e0a355",
+        "tab-warn-bg": "#33280f",
     },
 }
 
@@ -344,7 +352,7 @@ def render(view: PileupView) -> str:
         # Translate the focus region, when the view asks for a protein readout.
         # A focus region worth marking is not always a reading frame worth
         # translating, so this is gated on `translate` and not on `flanks`.
-        cons_protein = ref_protein = ""
+        cons_protein = ref_protein = parent_protein = ""
         if translate and has_flanks:
             consensus_dna = "".join(
                 ref_seq[i] if c == "." else (c if c != "-" else "N")
@@ -354,6 +362,14 @@ def render(view: PileupView) -> str:
             _ins_end = ref_len - flank_lengths[1]
             cons_protein = _translate(consensus_dna[_ins_start:_ins_end])
             ref_protein = _translate(ref_seq[_ins_start:_ins_end])
+            # The parent is the library's baseline -- a WT, typically -- and so
+            # the sequence a mutation is conventionally named against.  The
+            # reference is this well's assigned identity, which is itself a
+            # variant, so naming a change against it would number residues off
+            # an already-mutated sequence.
+            _parent = g.get("parent") or ""
+            if _parent:
+                parent_protein = _translate(_parent[_ins_start:_ins_end])
 
         # The parent row is encoded against the reference the same way the
         # reads are, so the designed change shows as the one column where the
@@ -378,6 +394,8 @@ def render(view: PileupView) -> str:
         # Translation data for canvas rendering
         ref_protein_js = _json.dumps(ref_protein) if ref_protein else "null"
         cons_protein_js = _json.dumps(cons_protein) if cons_protein else "null"
+        parent_protein_js = (_json.dumps(parent_protein) if parent_protein
+                             else "null")
 
         # The annotation track shares the pileup's scroll container, so it
         # moves with the columns it describes.  cell_w comes from annotate
@@ -445,7 +463,8 @@ def render(view: PileupView) -> str:
                 f'var flaggedCols={flagged_js};'
                 f'var parent={parent_js};'
                 f'var mmRuns={mismatch_runs_js};'
-                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h},parent,mmRuns);'
+                f'var parentAA={parent_protein_js};'
+                f'drawPileup("pileup-{idx}","ruler-{idx}","labels-{idx}",ref,cons,rows,flanks,"scroll-{idx}","wrap-{idx}",refAA,consAA,flaggedCols,{cell_w},{annot_h + band_h},{mismatch_h},parent,mmRuns,parentAA);'
                 f'}})();'
                 f'</script>'
             )

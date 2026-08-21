@@ -1,4 +1,4 @@
-function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent, mmRuns) {
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent, mmRuns, parentAA) {
   var canvas = document.getElementById(canvasId);
   var rulerCanvas = document.getElementById(rulerId);
   var labelsEl = document.getElementById(labelsId);
@@ -27,7 +27,13 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
 
   // Translation rows below reads (aligned to insert region)
   var hasAA = refAA && consAA && flanks;
+  // The parent is the library's baseline, so its translation is the row a
+  // mutation is named against. Drawn last of the three because it is the one a
+  // reader compares the other two back to.
+  var hasParentAA = !!(hasAA && parentAA && parentAA.length);
+  var aaRows = hasAA ? (hasParentAA ? 3 : 2) : 0;
   var aaH = hasAA ? 14 : 0;       // height of each AA row
+  var aaBlockH = aaRows ? aaRows * aaH + (aaRows - 1) * 2 : 0;
   var aaGap = hasAA ? 6 : 0;      // gap before AA section
   // A codon is exactly the three bases it translates. The old floor of 8px
   // made each glyph 2px wider than its codon whenever cellW was 2 -- every
@@ -56,9 +62,42 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   var mutTabs = [], mutRows = 0, mutDropped = 0;
   if (hasAA) {
     var rowEnds = [];
-    for (var mi = 0; mi < refAA.length && mi < consAA.length; mi++) {
-      if (refAA[mi] === consAA[mi]) continue;
-      var name = refAA[mi] + (mi + 1) + consAA[mi];
+    /* What a tab names depends on what the page knows.
+     *
+     * With a parent, that is the library's baseline -- a WT -- and mutations are
+     * named against it, which is the convention and the only numbering that
+     * means anything to a reader. The reference is this well's assigned
+     * identity, itself a variant, so a change named against it would be
+     * numbered off an already-mutated sequence.
+     *
+     * Knowing both then answers the question the well exists to answer, and each
+     * tab carries which of the three it is:
+     *
+     *   expected    the consensus moved off the parent, to what the assignment
+     *               said it would be. The designed mutation, confirmed.
+     *   unexpected  it moved off the parent to something else.
+     *   missing     it did not move, but the assignment said it should have.
+     *
+     * With no parent there is only one baseline available, so a tab names the
+     * reference-to-consensus change and has nothing to say about intent.
+     */
+    var namedAgainst = hasParentAA ? parentAA : refAA;
+    var limit = Math.min(refAA.length, consAA.length,
+                         hasParentAA ? parentAA.length : refAA.length);
+    for (var mi = 0; mi < limit; mi++) {
+      var base = namedAgainst[mi], obs = consAA[mi], want = refAA[mi];
+      var kind, name;
+      if (base !== obs) {
+        name = base + (mi + 1) + obs;
+        kind = !hasParentAA ? 'plain' : (obs === want ? 'expected' : 'unexpected');
+      } else if (hasParentAA && want !== base) {
+        // Expected but absent: the well reads as the parent where its assigned
+        // identity says it should not.
+        name = base + (mi + 1) + want;
+        kind = 'missing';
+      } else {
+        continue;
+      }
       var tabW = name.length * TAB_FONT * TAB_ADVANCE + TAB_PAD * 2;
       var stemX = flanks[0] * cellW + mi * aaCodonW + aaCodonW / 2;
       // Keep the tab on the canvas; the stem still points at the real codon.
@@ -73,14 +112,15 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
         placed = rowEnds.length - 1;
       }
       rowEnds[placed] = left + tabW;
-      mutTabs.push({name: name, stemX: stemX, left: left, w: tabW, row: placed});
+      mutTabs.push({name: name, stemX: stemX, left: left, w: tabW, row: placed,
+                    kind: kind});
     }
     mutRows = rowEnds.length;
   }
   var mutH = mutRows ? TAB_LEAD + TAB_STEM + mutRows * TAB_H
                        + (mutRows - 1) * TAB_ROW_GAP : 0;
 
-  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + (hasAA ? aaH * 2 + 2 : 0) + mutH;
+  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + aaBlockH + mutH;
   canvas.width = canvasW * dpr;
   canvas.height = pileupH * dpr;
   canvas.style.width = canvasW + 'px';
@@ -245,6 +285,18 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       consAALabel.textContent = 'Cons AA';
       consAALabel.style.height = aaH + 'px';
       labelsEl.appendChild(consAALabel);
+      if (hasParentAA) {
+        var paaGap = document.createElement('span');
+        paaGap.style.height = '2px';
+        labelsEl.appendChild(paaGap);
+        var parentAALabel = document.createElement('span');
+        parentAALabel.textContent = 'Parent AA';
+        parentAALabel.style.height = aaH + 'px';
+        parentAALabel.title = 'The library baseline. Mutations are named '
+          + 'against it, not against the well\u2019s assigned reference, which '
+          + 'is itself a variant.';
+        labelsEl.appendChild(parentAALabel);
+      }
       if (mutRows) {
         var mutLabel = document.createElement('span');
         mutLabel.textContent = 'Changes';
@@ -345,7 +397,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var insX = insStart * cellW;
     var insW = refAA.length * aaCodonW;
     ctx.fillStyle = aaBg;
-    ctx.fillRect(insX, aaY, insW, aaH * 2 + 2);
+    ctx.fillRect(insX, aaY, insW, aaBlockH);
 
     for (var ai = 0; ai < refAA.length; ai++) {
       var ax = insStart * cellW + ai * aaCodonW;
@@ -369,6 +421,20 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       }
       ctx.fillStyle = match ? aaMatchColor : aaDiffColor;
       drawResidue(cAA, ax, caaY, match);
+
+      // Parent AA row: the library baseline. Marked where the consensus has
+      // moved away from it, which is what a mutation name describes.
+      if (hasParentAA) {
+        var pAA = parentAA[ai];
+        var paaY = caaY + aaH + 2;
+        var fromParent = pAA === cAA;
+        if (!fromParent) {
+          ctx.fillStyle = aaDiffBg;
+          ctx.fillRect(ax, paaY, aaCodonW, aaH);
+        }
+        ctx.fillStyle = fromParent ? aaMatchColor : aaDiffColor;
+        drawResidue(pAA === undefined ? '?' : pAA, ax, paaY, fromParent);
+      }
     }
 
     // Subtle codon grid lines, but only when the pitch is wide enough that a
@@ -377,7 +443,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     ctx.lineWidth = 0.5;
     for (var ai = 1; aaCodonW >= 9 && ai < refAA.length; ai++) {
       var lx = insStart * cellW + ai * aaCodonW;
-      ctx.beginPath(); ctx.moveTo(lx, aaY); ctx.lineTo(lx, aaY + aaH * 2 + 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx, aaY); ctx.lineTo(lx, aaY + aaBlockH); ctx.stroke();
     }
 
     // --- Mutation tabs ---
@@ -386,7 +452,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     // because a tab is five times the width of the codon it names and cannot
     // sit over it.
     if (mutRows) {
-      var tabTop = aaY + aaH * 2 + 2 + TAB_LEAD;
+      var tabTop = aaY + aaBlockH + TAB_LEAD;
       ctx.font = TAB_FONT + 'px SF Mono,Menlo,Consolas,monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -397,14 +463,19 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       // above it, and those tabs are wider than the codon pitch, so the stem
       // has to pass behind them -- drawing every box after every stem is what
       // makes it pass behind rather than through.
-      ctx.strokeStyle = aaDiffColor;
+      function tabInk(kind) {
+        if (kind === 'expected') return [P['tab-ok'], P['tab-ok-bg'], false];
+        if (kind === 'missing') return [P['tab-warn'], P['tab-warn-bg'], true];
+        return [aaDiffColor, aaDiffBg, false];
+      }
       ctx.lineWidth = 1;
       for (var ti = 0; ti < mutTabs.length; ti++) {
         var tab = mutTabs[ti];
         var top = tabTopOf(tab);
         var centre = tab.left + tab.w / 2;
+        ctx.strokeStyle = tabInk(tab.kind)[0];
         ctx.beginPath();
-        ctx.moveTo(tab.stemX, aaY + aaH * 2 + 2);
+        ctx.moveTo(tab.stemX, aaY + aaBlockH);
         // Down to just above the tab, then across if the tab had to shift to
         // stay on the canvas. Stopping at the top edge rather than the middle
         // keeps the line out of the text.
@@ -418,13 +489,18 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
         // Opaque ground first, then the tint: aa-diff-bg is a translucent
         // rgba, so tinting alone would let the stems behind the tab show
         // through its text.
+        var ink = tabInk(tab.kind);
         ctx.fillStyle = P['aa-bg'];
         ctx.fillRect(tab.left, top, tab.w, TAB_H);
-        ctx.fillStyle = aaDiffBg;
+        ctx.fillStyle = ink[1];
         ctx.fillRect(tab.left, top, tab.w, TAB_H);
-        ctx.strokeStyle = aaDiffColor;
+        ctx.strokeStyle = ink[0];
+        // A dashed edge for a change the assignment promised and the reads do
+        // not show: the name is what was expected, not what is there.
+        ctx.setLineDash(ink[2] ? [3, 2] : []);
         ctx.strokeRect(tab.left + 0.5, top + 0.5, tab.w - 1, TAB_H - 1);
-        ctx.fillStyle = aaDiffColor;
+        ctx.setLineDash([]);
+        ctx.fillStyle = ink[0];
         ctx.fillText(tab.name, tab.left + tab.w / 2, top + TAB_H / 2);
       }
     }
@@ -535,19 +611,27 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       var base = ch === '.' ? refSeq[col] : ch;
       var note = ch === '.' ? ' (match)' : ch === '-' ? '' : ' (mismatch)';
       tooltip.textContent = rl + 'Consensus pos ' + (col + 1) + ': ' + base + note;
-    } else if (hasAA && yp >= aaY && yp < aaY + aaH * 2 + 2) {
+    } else if (hasAA && yp >= aaY && yp < aaY + aaBlockH) {
       var insStart = flanks[0];
       // Derived from the drawn geometry, not from the nucleotide rate: reading
       // the residue index a different way than it was placed is what made the
       // tooltip name a third, differently wrong residue.
       var aaIdx = Math.floor((x - insStart * cellW) / aaCodonW);
       if (aaIdx >= 0 && aaIdx < refAA.length) {
-        var isRefRow = yp < aaY + aaH;
-        var which = isRefRow ? 'Ref' : 'Cons';
-        var aa = isRefRow ? refAA[aaIdx] : consAA[aaIdx];
-        var other = isRefRow ? consAA[aaIdx] : refAA[aaIdx];
-        var note = aa === other ? ' (match)' : ' ≠ ' + (isRefRow ? 'Cons' : 'Ref') + ': ' + other;
-        tooltip.textContent = which + ' AA ' + (aaIdx + 1) + ': ' + aa + note;
+        var band = Math.min(aaRows - 1,
+                            Math.floor((yp - aaY) / (aaH + 2)));
+        var names = ['Ref', 'Cons', 'Parent'];
+        var seqs = [refAA, consAA, parentAA];
+        var aa = seqs[band] ? seqs[band][aaIdx] : undefined;
+        // Say the residue, then what the other rows read at the same codon, so
+        // hovering any one row answers the comparison rather than half of it.
+        var others = [];
+        for (var bi = 0; bi < aaRows; bi++) {
+          if (bi === band || !seqs[bi]) continue;
+          others.push(names[bi] + ' ' + seqs[bi][aaIdx]);
+        }
+        tooltip.textContent = names[band] + ' AA ' + (aaIdx + 1) + ': ' + aa +
+          (others.length ? '  (' + others.join(', ') + ')' : '');
       } else {
         tooltip.style.display = 'none'; return;
       }

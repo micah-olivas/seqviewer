@@ -508,9 +508,18 @@ def _tab_block(html):
 
 
 def test_a_changed_residue_is_named_the_way_a_mutation_is_written():
-    """Ref residue, position, new residue: V50I."""
+    """Baseline residue, position, new residue: V50I."""
     html = render(_view(flanks=(10, 10)))
-    assert "refAA[mi] + (mi + 1) + consAA[mi]" in html
+    assert "name = base + (mi + 1) + obs" in html
+
+
+def test_a_mutation_is_named_against_the_parent_when_there_is_one():
+    """The parent is the library baseline; the reference is this well's assigned
+    identity and is itself a variant, so numbering against it would count off an
+    already-mutated sequence.
+    """
+    html = render(_view(flanks=(10, 10)))
+    assert "var namedAgainst = hasParentAA ? parentAA : refAA;" in html
 
 
 def test_the_tab_band_adds_canvas_height_only_when_something_changed():
@@ -547,9 +556,10 @@ def test_stems_are_drawn_before_the_boxes():
 
 
 def test_a_tab_face_is_opaque_before_it_is_tinted():
-    """aa-diff-bg is translucent, so tint alone would show the stems through."""
+    """The tint is translucent, so tint alone would show the stems through."""
     block = _tab_block(render(_view(flanks=(10, 10))))
-    assert block.index("P['aa-bg']") < block.index("aaDiffBg")
+    opaque = block.index("ctx.fillStyle = P['aa-bg'];")
+    assert opaque < block.index("ctx.fillStyle = ink[1];")
 
 
 def test_a_stem_stops_at_the_top_of_its_tab_not_its_middle():
@@ -619,3 +629,81 @@ def test_the_track_shows_a_crosshair_not_a_help_cursor():
     """A help cursor on this page means a title is present; here there is none."""
     css = render(_view())
     assert "cursor: crosshair;" in css
+
+
+# --- Parent AA row ---------------------------------------------------------
+
+def _parent_view(**kwargs):
+    """A well whose reference is the parent carrying one designed change."""
+    parent = "ATG" * 20                      # 60 bases
+    # Flanks of 3 leave an 18-codon frame; the designed change is its first
+    # codon, ATG -> GTG, so M1V against the parent.
+    ref = parent[:3] + "G" + parent[4:]
+    rows = [[(b, b == ref[i]) for i, b in enumerate(parent)]] * 3
+    kwargs.setdefault("title", "parent view")
+    kwargs.setdefault("flanks", (3, 3))
+    kwargs.setdefault("groups", [PileupGroup("well", ref, rows, n_reads=3,
+                                             fraction=1.0, parent=parent)])
+    return PileupView(**kwargs)
+
+
+def test_the_parent_is_translated_and_reaches_the_page():
+    html = render(_parent_view())
+    assert "var parentAA=" in html
+    assert "var parentAA=null;" not in html
+
+
+def test_a_page_without_a_parent_carries_no_parent_translation():
+    assert "var parentAA=null;" in render(_view(flanks=(10, 10)))
+
+
+def test_the_amino_acid_block_grows_to_three_rows_for_a_parent():
+    html = render(_parent_view())
+    assert "var aaRows = hasAA ? (hasParentAA ? 3 : 2) : 0;" in html
+    assert "aaRows * aaH + (aaRows - 1) * 2" in html
+
+
+def test_the_parent_row_gets_its_own_gutter_label():
+    html = render(_parent_view())
+    assert "parentAALabel.textContent = 'Parent AA'" in html
+    assert "parentAALabel.title" in html
+
+
+def test_a_change_is_classified_against_both_baselines():
+    """Expected, unexpected, or missing -- which is the question a well asks."""
+    html = render(_parent_view())
+    for kind in ("'expected'", "'unexpected'", "'missing'"):
+        assert kind in html
+
+
+def test_a_change_matching_the_assignment_is_expected():
+    html = render(_parent_view())
+    assert "obs === want ? 'expected' : 'unexpected'" in html
+
+
+def test_a_change_the_assignment_promised_but_the_reads_lack_is_missing():
+    html = render(_parent_view())
+    assert "hasParentAA && want !== base" in html
+    assert "name = base + (mi + 1) + want" in html
+
+
+def test_the_three_kinds_take_three_inks():
+    html = render(_parent_view())
+    assert "P['tab-ok']" in html
+    assert "P['tab-warn']" in html
+    for theme in ("light", "dark"):
+        from seqviewer.render import _PALETTE
+        assert "tab-ok" in _PALETTE[theme]
+        assert "tab-warn" in _PALETTE[theme]
+
+
+def test_a_missing_change_is_drawn_with_a_dashed_edge():
+    """The name is what was expected, not what is there."""
+    html = render(_parent_view())
+    assert "ctx.setLineDash(ink[2] ? [3, 2] : []);" in html
+
+
+def test_hovering_one_amino_acid_row_reports_the_others():
+    html = render(_parent_view())
+    assert "var names = ['Ref', 'Cons', 'Parent'];" in html
+    assert "others.join(', ')" in html
