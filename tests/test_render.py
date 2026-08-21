@@ -400,3 +400,76 @@ def test_scroll_sync_leaves_a_lone_group_alone():
     html = render(_view())
     body = html[html.index("function syncPileupScrolls"):]
     assert "panes.length < 2" in body[:body.index("\n}")]
+
+
+# --- Opening position ------------------------------------------------------
+
+def _opening_block(html):
+    """The initial-scroll block out of the inlined drawPileup source."""
+    start = html.index("// --- Opening position")
+    return html[start:html.index("// --- Mismatch overflow arrows ---", start)]
+
+
+def test_the_pileup_opens_on_the_insert_when_there_is_one():
+    """A page is opened to look at the insert; the vector is context."""
+    block = _opening_block(render(_view(flanks=(10, 10))))
+    assert "if (flanks && scrollId)" in block
+    assert "openEl.scrollLeft" in block
+
+
+def test_the_opening_position_is_set_before_the_overflow_arrows_attach():
+    """Their first update has to read the position the reader will see."""
+    html = render(_view(flanks=(10, 10)))
+    assert html.index("// --- Opening position") < html.index(
+        "// --- Mismatch overflow arrows ---"
+    )
+
+
+def test_a_centred_insert_is_measured_against_the_pane_not_the_page():
+    block = _opening_block(render(_view(flanks=(10, 10))))
+    assert "openEl.clientWidth" in block
+    assert "(insLeft + insRight) / 2 - viewW / 2" in block
+
+
+def test_an_insert_wider_than_the_pane_opens_at_its_start():
+    """Reading starts at the 5' boundary, not in the middle of a long insert."""
+    block = _opening_block(render(_view(flanks=(10, 10))))
+    assert "insRight - insLeft <= viewW" in block
+    assert "target = insLeft - 12" in block
+
+
+def test_the_opening_position_is_clamped_to_what_can_be_scrolled():
+    block = _opening_block(render(_view(flanks=(10, 10))))
+    assert "openEl.scrollWidth - viewW" in block
+    assert "Math.max(0, Math.min(target, maxLeft))" in block
+
+
+def test_a_page_with_no_insert_opens_where_it_always_did():
+    """flanks is null, so the block is inert rather than absent."""
+    assert "var flanks=null;" in render(_view())
+
+
+# --- The help cursor promises a tooltip -----------------------------------
+
+def test_the_help_cursor_is_gated_on_carrying_a_title():
+    """A help cursor is a promise of a tooltip.
+
+    The legend's own star is the case that got this wrong: it is the definition
+    of the mark, so it has nothing to explain on hover, and it drew a question
+    mark that did nothing.
+    """
+    css = render(_view())
+    assert ".sv-fact[title], .sv-star[title] {" in css
+    assert re.search(r"\.sv-star \{\s*color: var\(--warn\);\s*\}", css)
+
+
+def test_the_legends_star_carries_no_title_and_so_claims_no_cursor():
+    html = render(_view(highlight_ids=["ref-1"], highlight_label="Recoverable",
+                        groups=[PileupGroup("ref-1", "ACGT" * 25,
+                                            [[(b, True) for b in "ACGT" * 25]],
+                                            n_reads=1, highlighted=True)]))
+    # The body element, not the stylesheet rule of the same name.
+    legend = html[html.index('class="sv-highlight"'):]
+    legend = legend[:legend.index("</div>")]
+    assert '<span class="sv-star">' in legend
+    assert "title=" not in legend

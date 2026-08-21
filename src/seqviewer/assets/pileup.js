@@ -351,6 +351,36 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }
     ctx.restore();
   }
+  // --- Opening position: the insert, not base 1 ---
+  /* A page is opened to look at the insert; the vector around it is context. So
+   * the first thing on screen is the insert rather than whatever happens to sit
+   * at the left edge of the reference.
+   *
+   * Set before the overflow arrows attach, so their first update reads the
+   * position the reader will actually see. Set on every group, not just one and
+   * mirrored: the mirror only fires on a scroll event, and a group whose pane is
+   * not scrollable never fires one.
+   */
+  if (flanks && scrollId) {
+    var openEl = document.getElementById(scrollId);
+    if (openEl) {
+      var insLeft = flanks[0] * cellW;
+      var insRight = (nCols - flanks[1]) * cellW;
+      var viewW = openEl.clientWidth;
+      var target;
+      if (insRight - insLeft <= viewW) {
+        // It fits: centre it, so both boundary lines are on screen at once.
+        target = (insLeft + insRight) / 2 - viewW / 2;
+      } else {
+        // Wider than the pane: open at its 5' boundary, where reading starts,
+        // rather than somewhere in the middle of it. The margin keeps the
+        // boundary line itself visible instead of flush against the edge.
+        target = insLeft - 12;
+      }
+      var maxLeft = openEl.scrollWidth - viewW;
+      openEl.scrollLeft = Math.max(0, Math.min(target, maxLeft));
+    }
+  }
   // --- Mismatch overflow arrows ---
   if (mismatchCols.length > 0 && scrollId && wrapId) {
     var scrollEl = document.getElementById(scrollId);
