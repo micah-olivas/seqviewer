@@ -447,3 +447,37 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     tooltip.style.display = 'none';
   });
 }
+
+/* Mirror horizontal scrolling across every pileup on the page.
+ *
+ * Each group scrolls in its own container, so without this a page of several
+ * groups drifts out of register: the reader lines up a column in one pileup and
+ * the group below it is showing somewhere else. Scrolling is what a reader does
+ * to compare groups, so the groups have to move together.
+ *
+ * scrollLeft is mirrored as a raw pixel offset rather than as a fraction of the
+ * scrollable width. Every group is drawn at the same pixels-per-base, so equal
+ * offsets mean the same reference position even where the groups have different
+ * reference lengths -- which is the register that matters. A fraction would put
+ * them in different places on exactly those pages.
+ *
+ * Assigning scrollLeft here makes the browser fire scroll on the panes being
+ * caught up, which re-enters this handler. Nothing guards against that beyond
+ * the equality check, and nothing needs to: those panes are already at the
+ * target offset, so the second pass assigns nothing and the echo stops. The
+ * half-pixel tolerance is for fractional offsets at fractional zoom, where
+ * assigning a value the pane cannot hold exactly would otherwise leave the two
+ * nudging each other.
+ */
+function syncPileupScrolls() {
+  var panes = [].slice.call(document.querySelectorAll('.pileup-scroll'));
+  if (panes.length < 2) return;
+  panes.forEach(function(pane) {
+    pane.addEventListener('scroll', function() {
+      var left = pane.scrollLeft;
+      panes.forEach(function(other) {
+        if (Math.abs(other.scrollLeft - left) > 0.5) other.scrollLeft = left;
+      });
+    });
+  });
+}

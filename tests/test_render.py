@@ -377,3 +377,26 @@ def test_renderer_needs_no_third_party_imports():
     # importlib is stdlib: the renderer reads its CSS and JS out of the
     # package's assets directory with importlib.resources.
     assert roots <= {"html", "json", "collections", "importlib", "__future__"}, roots
+
+
+def test_scroll_sync_runs_after_the_groups():
+    """The mirror has to find every pileup, so it cannot run before them."""
+    html = render(_view())
+    assert "syncPileupScrolls();" in html
+    assert html.index("syncPileupScrolls();") > html.rindex("drawPileup(")
+
+
+def test_scroll_sync_mirrors_a_raw_offset():
+    """Equal pixel offsets are the same base; equal fractions are not."""
+    html = render(_view())
+    call = html[html.index("function syncPileupScrolls"):]
+    call = call[:call.index("\n}")]
+    assert "other.scrollLeft = left" in call
+    assert "scrollWidth" not in call
+
+
+def test_scroll_sync_leaves_a_lone_group_alone():
+    """One group has nothing to stay in register with."""
+    html = render(_view())
+    body = html[html.index("function syncPileupScrolls"):]
+    assert "panes.length < 2" in body[:body.index("\n}")]

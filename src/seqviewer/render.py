@@ -593,6 +593,11 @@ var SV_PALETTE = {palette_js};
     <div class="sv-key">{key_html}</div>
 </div>
 {body}
+<script>
+/* After the groups: every pileup exists by now, which is what the mirror needs
+   to find them all. */
+syncPileupScrolls();
+</script>
 <script id="{_script_id}">
 {theme_js}
 </script>
