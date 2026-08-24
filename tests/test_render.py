@@ -707,3 +707,42 @@ def test_hovering_one_amino_acid_row_reports_the_others():
     html = render(_parent_view())
     assert "var names = ['Ref', 'Cons', 'Parent'];" in html
     assert "others.join(', ')" in html
+
+
+# --- The pinned scale's gutter ---------------------------------------------
+
+def test_the_gutter_is_sized_to_the_track_it_labels():
+    """One panel the height of the track, not a box per label: the two marks sit
+    about nine pixels apart and nine-pixel boxes would overlap.
+    """
+    from seqviewer.annotate import MISMATCH_TRACK_HEIGHT
+
+    html = render(_view())
+    assert f"height:{MISMATCH_TRACK_HEIGHT}px" in html
+
+
+def test_the_gutter_fades_to_transparent_over_a_fixed_length():
+    """A percentage stop would shrink the runway for a shorter label."""
+    html = render(_view())
+    assert "var(--cv-bg) 26px," in html
+    assert "transparent 40px" in html
+
+
+def test_the_labels_carry_no_background_of_their_own():
+    """The panel is the ground; a per-label box is what overlapped."""
+    css = render(_view())
+    block = css[css.index(".pileup-mf-marks span {"):]
+    assert "background" not in block[:block.index("}")]
+
+
+def test_the_focus_region_is_not_filled_the_same_as_the_flanks():
+    """Both are outlined the same way; the fill is what separates them, and the
+    insert reads warm rather than as a second blue block.
+    """
+    from seqviewer.render import _PALETTE
+
+    for theme in ("light", "dark"):
+        assert "region-focus" in _PALETTE[theme]
+        assert _PALETTE[theme]["region-focus"] != _PALETTE[theme]["region"]
+    css = render(_view())
+    assert "fill: var(--cv-region-focus);" in css

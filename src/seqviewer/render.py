@@ -68,6 +68,10 @@ _PALETTE = {
         "g": "#e67700",
         "boundary": "#d97706",
         "region": "rgba(56,132,255,0.10)",
+        # The focus region reads warm, tied to the boundary colour its
+        # outline and its dashed edges already use, so it is not a
+        # second blue block beside the flanks.
+        "region-focus": "rgba(217,119,6,0.09)",
         "tick": "#94a3b8",
         "tick-label": "#1e293b",
         "flag": "#94a3b8",
@@ -91,6 +95,10 @@ _PALETTE = {
         "g": "#ffd43b",
         "boundary": "#f59e0b",
         "region": "rgba(120,170,255,0.16)",
+        # The focus region reads warm, tied to the boundary colour its
+        # outline and its dashed edges already use, so it is not a
+        # second blue block beside the flanks.
+        "region-focus": "rgba(245,158,11,0.15)",
         "tick": "#64748b",
         "tick-label": "#e0e0e0",
         "flag": "#64748b",
@@ -427,7 +435,8 @@ def render(view: PileupView) -> str:
         if mismatch_svg:
             mismatch_marks = (
                 f'<div class="pileup-mf-marks" '
-                f'style="top:{annot_h + band_h}px">'
+                f'style="top:{annot_h + band_h}px;'
+                f'height:{_MISMATCH_TRACK_HEIGHT}px">'
                 + "".join(
                     f'<span style="top:{y - 9:.1f}px">{_html.escape(label)}</span>'
                     for label, y in _mismatch_mark_offsets()
