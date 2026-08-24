@@ -358,8 +358,28 @@ def test_zero_and_negative_frequencies_draw_nothing():
     assert "L8.0,0.0" not in svg
 
 
-def test_the_marks_are_drawn_and_labelled():
+def test_the_marks_are_drawn_as_gridlines():
     svg = mismatch_track_svg([0.0] * 10, cell_w=4)
     assert svg.count("sv-mf-grid") == len(MISMATCH_TRACK_MARKS)
-    assert ">1%<" in svg
-    assert ">10%<" in svg
+
+
+def test_the_scale_is_labelled_outside_the_scrolling_drawing():
+    """A scale that scrolls away with the bars stops being a scale, so the
+    numbers are placed and pinned by the page, not drawn into the track.
+    """
+    from seqviewer.annotate import mismatch_mark_offsets
+
+    svg = mismatch_track_svg([0.0] * 10, cell_w=4)
+    assert ">1%<" not in svg and ">10%<" not in svg
+    assert [label for label, _ in mismatch_mark_offsets()] == ["1%", "10%"]
+
+
+def test_a_mark_sits_on_the_gridline_it_names():
+    """Both come off the same scale, so a number cannot drift off its line."""
+    from seqviewer.annotate import (MISMATCH_TRACK_HEIGHT, mismatch_level,
+                                    mismatch_mark_offsets)
+
+    for (label, y), mark in zip(mismatch_mark_offsets(), MISMATCH_TRACK_MARKS):
+        assert y == pytest.approx(
+            MISMATCH_TRACK_HEIGHT - mismatch_level(mark) * MISMATCH_TRACK_HEIGHT
+        )

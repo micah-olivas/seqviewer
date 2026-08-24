@@ -21,6 +21,7 @@ from .annotate import plan_track as _plan_track
 from .annotate import track_style as _track_style
 from .annotate import region_band_svg as _region_band_svg
 from .annotate import track_svg as _track_svg
+from .annotate import mismatch_mark_offsets as _mismatch_mark_offsets
 from .annotate import mismatch_track_svg as _mismatch_track_svg
 from .summary import flagged_columns as _flagged_columns
 from .summary import mismatch_counts as _mismatch_counts
@@ -418,6 +419,22 @@ def render(view: PileupView) -> str:
         mismatch_svg = _mismatch_track_svg(mismatch_freqs, cell_w=cell_w)
         mismatch_h = _MISMATCH_TRACK_HEIGHT + 5 if mismatch_svg else 0
 
+        # The track scrolls; its scale must not. The numbers on the gridlines sit
+        # outside the scrolling drawing, pinned to the left edge over a fade to
+        # the page ground -- the same treatment the overflow arrows get, for the
+        # same reason: they have to stay legible over whatever scrolls under them.
+        mismatch_marks = ""
+        if mismatch_svg:
+            mismatch_marks = (
+                f'<div class="pileup-mf-marks" '
+                f'style="top:{annot_h + band_h}px">'
+                + "".join(
+                    f'<span style="top:{y - 9:.1f}px">{_html.escape(label)}</span>'
+                    for label, y in _mismatch_mark_offsets()
+                )
+                + "</div>"
+            )
+
         if n_rows == 0:
             pileup_block = (
                 f'<div class="pileup-empty">'
@@ -437,6 +454,7 @@ def render(view: PileupView) -> str:
                 f'<canvas id="ruler-{idx}" class="pileup-ruler"></canvas>'
                 f'<canvas id="pileup-{idx}"></canvas>'
                 f'</div>'
+                f'{mismatch_marks}'
                 f'</div>'
                 f'</div>'
                 f'</div>'

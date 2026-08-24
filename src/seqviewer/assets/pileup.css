@@ -381,10 +381,26 @@ html, body {
     stroke-width: 1;
     stroke-dasharray: 3 3;
 }
-.sv-mf-markbg {
-    fill: var(--__PREFIX__-bg);
+/* The scale's numbers live outside the scrolling drawing and stay put, because
+   a scale that scrolls away stops being one. Pinned to the left edge over a fade
+   to the page ground, the same treatment the overflow arrows get: they have to
+   stay legible over whatever bars scroll beneath them. */
+.pileup-mf-marks {
+    position: absolute;
+    left: 0;
+    pointer-events: none;
+    z-index: 2;
 }
-.sv-mf-mark {
+.pileup-mf-marks span {
+    position: absolute;
+    left: 0;
+    height: 9px;
+    line-height: 9px;
+    padding-left: 2px;
+    padding-right: 10px;
     font: 8px var(--mono);
-    fill: var(--muted);
+    color: var(--muted);
+    white-space: nowrap;
+    background: linear-gradient(to right,
+        var(--__PREFIX__-bg) 45%, transparent);
 }

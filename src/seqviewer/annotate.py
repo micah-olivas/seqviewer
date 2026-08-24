@@ -26,7 +26,8 @@ __all__ = [
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
     "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
-    "mismatch_track_svg", "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_FLOOR",
+    "mismatch_track_svg", "mismatch_mark_offsets",
+    "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_FLOOR",
     "MISMATCH_TRACK_MARKS", "mismatch_level",
 ]
 
@@ -542,6 +543,19 @@ def mismatch_level(freq: float, floor: float = MISMATCH_TRACK_FLOOR) -> float:
     return (math.log10(freq) - log_floor) / (0.0 - log_floor)
 
 
+def mismatch_mark_offsets(height: int = MISMATCH_TRACK_HEIGHT,
+                          floor: float = MISMATCH_TRACK_FLOOR,
+                          marks: Sequence[float] = MISMATCH_TRACK_MARKS):
+    """Where each mark sits, as ``(label, y)`` from the top of the track.
+
+    The track scrolls and its scale does not, so the labels are placed outside
+    the drawing and pinned.  Their positions still come from here, because the
+    scale that puts the gridlines where they are has to put the numbers on them.
+    """
+    return [(f"{mark:.0%}", height - mismatch_level(mark, floor) * height)
+            for mark in marks]
+
+
 def mismatch_track_svg(
     freqs: Sequence[float],
     cell_w: Optional[int] = None,
@@ -584,16 +598,6 @@ def mismatch_track_svg(
         parts.append(
             f'<line class="{prefix}-grid" x1="0" y1="{y:.1f}" '
             f'x2="{width:.0f}" y2="{y:.1f}"/>'
-        )
-        # Punched out of the page ground rather than drawn over the bars: the
-        # left edge of the track is data, not margin.
-        label = f"{mark:.0%}"
-        parts.append(
-            f'<rect class="{prefix}-markbg" x="0" y="{y - 9:.1f}" '
-            f'width="{len(label) * 5 + 4}" height="9"/>'
-        )
-        parts.append(
-            f'<text class="{prefix}-mark" x="2" y="{y - 1.5:.1f}">{label}</text>'
         )
 
     d = [f"M0,{height}"]
