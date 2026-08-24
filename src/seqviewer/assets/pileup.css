@@ -316,29 +316,11 @@ html, body {
 .sv-annot-out {
     fill: var(--muted);
 }
-/* --- Region tint and band ---
-   The flank regions are tinted at the very back of the scroll container, so the
-   insert reads as a lit window between two shoulders before any label is read.
-   The tint sits behind the glyphs and the canvas rather than over them: it is
-   context, and washing a feature's own colour would misreport it. */
-.pileup-scroll {
-    position: relative;
-}
-.sv-region {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: var(--__PREFIX__-region);
-    z-index: 0;
-    pointer-events: none;
-}
-.sv-annot,
-.sv-band,
-.sv-mf,
-.pileup-scroll canvas {
-    position: relative;
-    z-index: 1;
-}
+/* --- Region band ---
+   One labelled block naming each span, and nothing else tinted. A wash behind
+   the features, the mismatch track and the ruler said the same thing a third
+   time, in a colour those rows then had to be read through; the band already
+   names the spans and the dashed boundaries already mark their edges. */
 .sv-band {
     display: block;
     margin-bottom: 4px;

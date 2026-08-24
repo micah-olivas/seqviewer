@@ -20,7 +20,6 @@ from .annotate import cell_width as _cell_width
 from .annotate import plan_track as _plan_track
 from .annotate import track_style as _track_style
 from .annotate import region_band_svg as _region_band_svg
-from .annotate import region_spans as _region_spans
 from .annotate import track_svg as _track_svg
 from .annotate import mismatch_track_svg as _mismatch_track_svg
 from .summary import flagged_columns as _flagged_columns
@@ -408,16 +407,6 @@ def render(view: PileupView) -> str:
         annot_plans.append((annot_plan, annot_prefix))
         annot_h = annot_plan.height + (5 if annot_plan.glyphs else 0)
 
-        # The flank regions get a tint at the very back of the stack, so the
-        # insert reads as a lit window between two shoulders before any text is
-        # read.  It sits behind the glyphs rather than over them: it is context,
-        # and tinting a feature's own colour would misreport it.
-        region_tint = "".join(
-            f'<div class="sv-region" style="left:{start * cell_w}px;'
-            f'width:{(end - start) * cell_w}px"></div>'
-            for start, end, _label, kind in _region_spans(flank_lengths, ref_len)
-            if kind == "vec"
-        )
         band_svg = _region_band_svg(flank_lengths, ref_len, cell_w=cell_w)
         band_h = 15 + 4 if band_svg else 0
 
@@ -442,7 +431,6 @@ def render(view: PileupView) -> str:
                 f'<div class="pileup-labels" id="labels-{idx}"></div>'
                 f'<div class="pileup-scroll-wrap" id="wrap-{idx}">'
                 f'<div class="pileup-scroll" id="scroll-{idx}">'
-                f'{region_tint}'
                 f'{band_svg}'
                 f'{annot_svg}'
                 f'{mismatch_svg}'

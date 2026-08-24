@@ -154,22 +154,6 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   }
   // --- Ruler ---
   var rulerH = 14;
-  // The flank tint stops above the reads. Run down the full height it sits
-  // behind every row at a value close to the match colour, so a row has to be
-  // read through it and the two greys compete. Over the tracks alone it still
-  // says which span is which, which is all it was ever for; the reads get the
-  // dashed boundaries instead, which cost no contrast.
-  if (scrollId) {
-    var scrollForRegions = document.getElementById(scrollId);
-    if (scrollForRegions) {
-      var regionEls = scrollForRegions.querySelectorAll('.sv-region');
-      var headerH = (annotH || 0) + (mismatchH || 0) + rulerH;
-      for (var ri = 0; ri < regionEls.length; ri++) {
-        regionEls[ri].style.bottom = 'auto';
-        regionEls[ri].style.height = headerH + 'px';
-      }
-    }
-  }
   if (rulerCanvas) {
     rulerCanvas.width = canvasW * dpr;
     rulerCanvas.height = rulerH * dpr;

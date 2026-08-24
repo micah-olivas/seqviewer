@@ -59,15 +59,25 @@ class TestWildTypeRow:
 
 
 class TestRegionTintExtent:
-    """The flank tint marks the tracks, not every read row beneath them."""
+    """One labelled block names each span, and nothing else is tinted.
 
-    def test_the_tint_is_not_anchored_to_the_container_bottom(self):
-        page = _page()
-        assert "regionEls[ri].style.bottom = 'auto'" in page
+    The wash behind the features, the mismatch track and the ruler said the same
+    thing a third time, in a colour those rows then had to be read through.
+    """
 
-    def test_its_height_is_the_header_stack(self):
+    def test_no_tint_is_drawn_at_all(self):
         page = _page()
-        assert "var headerH = (annotH || 0) + (mismatchH || 0) + rulerH" in page
+        assert "sv-region" not in page
+
+    def test_the_band_still_names_the_spans(self):
+        page = _page()
+        assert 'class="sv-band"' in page
+        assert "5\u2032 vector" in page or "5′ vector" in page
+
+    def test_the_tracks_need_no_stacking_context_now(self):
+        """The z-index stack existed only to sit above the tint."""
+        page = _page()
+        assert "z-index: 0" not in page
 
     def test_the_boundaries_still_run_the_full_height(self):
         """The dashed lines cost no contrast, so they stay: they are what marks
