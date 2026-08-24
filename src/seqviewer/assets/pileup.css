@@ -330,12 +330,19 @@ html, body {
     letter-spacing: 0.04em;
     pointer-events: none;
 }
-.sv-band-vec {
+/* Both blocks are drawn the same way -- one fill, one outline, one width --
+   so the band reads as a row of like things. Only the hue separates them: the
+   insert takes the boundary colour it shares with the dashed edges that mark
+   it, the flanks a quieter grey. */
+.sv-band-vec,
+.sv-band-ins {
     fill: var(--__PREFIX__-region);
+    stroke-width: 1;
+}
+.sv-band-vec {
     stroke: var(--border);
 }
 .sv-band-ins {
-    fill: none;
     stroke: var(--__PREFIX__-boundary);
 }
 .sv-band-tvec {

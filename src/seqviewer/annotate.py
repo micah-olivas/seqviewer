@@ -491,8 +491,13 @@ def region_band_svg(flanks, ref_len: int, cell_w: Optional[int] = None,
         x0, x1 = start * cell_w, end * cell_w
         span = x1 - x0
         parts.append(f"<g><title>{_escape(label)}</title>")
-        parts.append(f'<rect class="{prefix}-{kind}" x="{x0:.1f}" y="0" '
-                     f'width="{span:.1f}" height="{height}" rx="2"/>')
+        # Inset by half the stroke so no edge is clipped by the viewBox. A
+        # rect at y=0 has its top stroke straddling the boundary, which draws it
+        # at half width while the left and right edges draw whole -- the same
+        # outline reading as three different weights.
+        parts.append(f'<rect class="{prefix}-{kind}" x="{x0 + 0.5:.1f}" '
+                     f'y="0.5" width="{span - 1:.1f}" '
+                     f'height="{height - 1}" rx="2"/>')
         if span > _REGION_MIN_LABEL:
             parts.append(
                 f'<text class="{prefix}-t{kind}" x="{x0 + span / 2:.1f}" '
