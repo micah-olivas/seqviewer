@@ -764,22 +764,76 @@ def test_the_focus_region_is_not_filled_the_same_as_the_flanks():
 
 # --- Taking the page away --------------------------------------------------
 
-def test_the_masthead_offers_both_copies():
+def test_the_masthead_offers_a_drag_chip_and_an_image_copy():
+    """A file can leave by drag or not at all: the clipboard safelist is text,
+    HTML and PNG, and Chromium's custom formats are namespaced so that native
+    applications ignore them.
+    """
     html = render(_view())
-    assert 'data-copy="html"' in html
+    assert 'data-copy="path"' in html
     assert 'data-copy="image"' in html
-    assert ">Copy HTML<" in html and ">Copy image<" in html
+    assert 'data-copy="html"' not in html          # it could only ever be text
+    assert ">Drag or copy path<" in html and ">Copy image<" in html
 
 
 def test_each_button_says_what_it_does_on_hover():
     html = render(_view())
-    buttons = re.findall(r"<button[^>]*class=\"sv-copy\"[^>]*>", html)
+    buttons = re.findall(r"<button[^>]*class=\"sv-copy[^\"]*\"[^>]*>", html)
     assert len(buttons) == 2
     for tag in buttons:
         assert 'title="' in tag
         # A description, not a restatement of the label.
         title = re.search(r'title="([^"]+)"', tag).group(1)
         assert len(title) > 40, title
+
+
+def test_the_chip_is_draggable_and_the_image_button_is_not():
+    html = render(_view())
+    chip = re.search(r'<button[^>]*sv-drag[^>]*>', html).group(0)
+    assert 'draggable="true"' in chip
+    image = re.search(r'<button[^>]*data-copy="image"[^>]*>', html).group(0)
+    assert "draggable" not in image
+
+
+def test_the_drag_hands_over_a_file_not_text():
+    html = render(_view())
+    body = html[html.index("function bindDragOut"):]
+    assert "'DownloadURL'" in body
+    assert "'text/html:' + pileupFileName() + ':' + url" in body
+    assert "URL.createObjectURL" in body
+
+
+def test_a_browser_without_downloadurl_falls_back_to_the_path():
+    """Safari does not implement it, and there the chip will not drag."""
+    html = render(_view())
+    body = html[html.index("function bindDragOut"):]
+    assert "e.dataTransfer.setData('text/plain', pileupFilePath())" in body
+
+
+def test_the_object_url_is_revoked_after_the_drag():
+    html = render(_view())
+    body = html[html.index("function bindDragOut"):]
+    assert body.count("URL.revokeObjectURL") == 2
+
+
+def test_a_drag_nothing_accepted_says_so():
+    """dropEffect is the only signal available that the promise was not taken."""
+    html = render(_view())
+    assert "dropEffect === 'none'" in html
+    assert "'Not dropped'" in html
+
+
+def test_clicking_the_chip_copies_the_path():
+    html = render(_view())
+    assert "navigator.clipboard.writeText(path)" in html
+    assert "'Path copied'" in html
+
+
+def test_a_page_with_no_path_says_so_rather_than_copying_nothing():
+    """Served over http there is no file to name."""
+    html = render(_view())
+    assert "this page has no path to copy" in html
+    assert "location.protocol !== 'file:'" in html
 
 
 def test_the_copied_source_is_the_page_as_it_arrived():

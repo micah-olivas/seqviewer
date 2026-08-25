@@ -157,6 +157,14 @@ html, body {
 .sv-copy:hover {
     border-color: var(--muted);
 }
+/* The chip is a handle before it is a button: the drag is the thing that can
+   carry a file, and the click is the fallback for browsers that cannot. */
+.sv-drag {
+    cursor: grab;
+}
+.sv-drag:active {
+    cursor: grabbing;
+}
 .sv-copy:active {
     background: var(--neutral-bg);
 }

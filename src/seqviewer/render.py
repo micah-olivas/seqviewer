@@ -637,8 +637,9 @@ var SV_PALETTE = {palette_js};
         {highlight_line}
     </div>
     <div class="sv-actions">
-        <button type="button" class="sv-copy" data-copy="html"
-                title="Copy this page's HTML. Paste it into a file and open it to get this page back, with everything it draws already inside it.">Copy HTML</button>
+        <button type="button" class="sv-copy sv-drag" draggable="true"
+                data-copy="path"
+                title="Drag into Slack, Mail or Finder to attach this page as a file. Clicking copies its path instead \u2014 a browser cannot put a file on the clipboard, only a drag can carry one, and only in Chrome.">Drag or copy path</button>
         <button type="button" class="sv-copy" data-copy="image"
                 title="Copy the plot as a PNG, to paste into a document or a message. The masthead and the key are not in it.">Copy image</button>
     </div>

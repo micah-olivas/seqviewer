@@ -847,6 +847,24 @@ function pileupImageBlob() {
   });
 }
 
+/* Where this page sits, and what to call a copy of it.
+ *
+ * A page opened from disk knows its own path, which is the one thing about
+ * "the file" a browser can hand over as text.
+ */
+function pileupFilePath() {
+  if (location.protocol !== 'file:') return '';
+  return decodeURIComponent(location.pathname);
+}
+
+function pileupFileName() {
+  var path = pileupFilePath();
+  var base = path ? path.split('/').pop() : '';
+  if (base) return base;
+  var title = (document.title || 'pileup').replace(/[^A-Za-z0-9._-]+/g, '-');
+  return title.replace(/^-+|-+$/g, '') + '.html';
+}
+
 function copyPileup(kind) {
   if (kind === 'image') {
     return pileupImageBlob().then(function (blob) {
@@ -855,29 +873,82 @@ function copyPileup(kind) {
       ]);
     });
   }
-  return navigator.clipboard.writeText(pileupPageSource());
+  var path = pileupFilePath();
+  if (!path) {
+    return Promise.reject(new Error('this page has no path to copy'));
+  }
+  return navigator.clipboard.writeText(path);
+}
+
+/* Dragging the page out as a real file.
+ *
+ * The clipboard cannot carry a file: its safelist is text, HTML and PNG, and
+ * the custom formats Chromium allows are namespaced so that native applications
+ * ignore them. A drag can, through DownloadURL, which Chromium fulfils as a
+ * macOS file promise -- so dragging this chip into Slack or Mail attaches the
+ * page, where pasting never could.
+ *
+ * Two things to know about it. It is Chromium only; Safari does not implement
+ * DownloadURL, and there the chip simply will not drag, which is why clicking
+ * it copies the path instead. And a page opened from disk has an opaque origin,
+ * so the blob URL below reads blob:null/... -- whether the browser will fulfil
+ * a promise from one is its own business, and dragend reports what became of
+ * the drop either way.
+ */
+function bindDragOut(chip) {
+  var url = null;
+  chip.addEventListener('dragstart', function (e) {
+    if (url) URL.revokeObjectURL(url);
+    var blob = new Blob([pileupPageSource()], {type: 'text/html'});
+    url = URL.createObjectURL(blob);
+    try {
+      e.dataTransfer.setData('DownloadURL',
+        'text/html:' + pileupFileName() + ':' + url);
+      e.dataTransfer.effectAllowed = 'copy';
+    } catch (err) {
+      // Safari and anything else without DownloadURL: the drag carries the
+      // path as text, which some targets will at least insert.
+      e.dataTransfer.setData('text/plain', pileupFilePath());
+    }
+  });
+  chip.addEventListener('dragend', function (e) {
+    if (url) { URL.revokeObjectURL(url); url = null; }
+    // dropEffect is 'none' when nothing accepted the drag, which is the only
+    // signal available that the promise was not taken up.
+    if (e.dataTransfer && e.dataTransfer.dropEffect === 'none') {
+      say(chip, 'Not dropped');
+    }
+  });
 }
 
 /* Wire the buttons, and say what happened. A copy leaves no trace on the page,
  * so without a word back there is no way to tell it worked.
  */
+/* Say something on the button itself and put it back after. A copy leaves no
+ * trace on the page, so without a word back there is no way to tell it worked.
+ */
+function say(btn, message) {
+  if (btn.dataset.saying) return;
+  var was = btn.dataset.label || btn.textContent;
+  btn.dataset.label = was;
+  btn.dataset.saying = '1';
+  btn.textContent = message;
+  setTimeout(function () {
+    btn.textContent = was;
+    delete btn.dataset.saying;
+  }, 1400);
+}
+
 function bindCopyButtons() {
   [].forEach.call(document.querySelectorAll('.sv-copy'), function (btn) {
+    if (btn.classList.contains('sv-drag')) bindDragOut(btn);
     btn.addEventListener('click', function () {
-      var was = btn.textContent;
-      if (btn.dataset.busy) return;
-      btn.dataset.busy = '1';
-      btn.textContent = 'Copying…';
+      if (btn.dataset.saying) return;
       copyPileup(btn.dataset.copy).then(function () {
-        btn.textContent = 'Copied';
+        say(btn, btn.dataset.copy === 'path' ? 'Path copied' : 'Copied');
       }, function (err) {
-        btn.textContent = 'Copy failed';
+        say(btn, 'Copy failed');
         btn.title = String(err && err.message || err);
-      }).then(function () {
-        setTimeout(function () {
-          btn.textContent = was;
-          delete btn.dataset.busy;
-        }, 1400);
       });
     });
   });
