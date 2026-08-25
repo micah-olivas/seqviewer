@@ -636,6 +636,12 @@ var SV_PALETTE = {palette_js};
         <div class="sv-facts">{head_facts}</div>
         {highlight_line}
     </div>
+    <div class="sv-actions">
+        <button type="button" class="sv-copy" data-copy="html"
+                title="Copy this page's HTML. Paste it into a file and open it to get this page back, with everything it draws already inside it.">Copy HTML</button>
+        <button type="button" class="sv-copy" data-copy="image"
+                title="Copy the plot as a PNG, to paste into a document or a message. The masthead and the key are not in it.">Copy image</button>
+    </div>
     <div class="sv-key">{key_html}</div>
 </div>
 {body}
@@ -643,6 +649,7 @@ var SV_PALETTE = {palette_js};
 /* After the groups: every pileup exists by now, which is what the mirror needs
    to find them all. */
 syncPileupScrolls();
+bindCopyButtons();
 </script>
 <script id="{_script_id}">
 {theme_js}

@@ -723,3 +723,162 @@ function syncPileupScrolls() {
     });
   });
 }
+
+/* --- Copying the page ------------------------------------------------------
+ *
+ * Two things a reader wants to take away: the page itself, to keep or send, and
+ * the plot as a picture, to paste somewhere that is not a browser.
+ *
+ * Both need a click to work at all. The clipboard refuses without user
+ * activation, which is why this lives on a button and cannot be done on load.
+ */
+
+/* The page as it arrived, not as it now stands.
+ *
+ * drawPileup appends to the DOM as it runs -- the row labels, the overflow
+ * arrows, the floating tooltip -- and serialising the live document would bake
+ * those in. Re-opening such a file would then run the scripts again over a page
+ * that already had them, drawing a second set of arrows. The row labels clear
+ * themselves on each run; the rest are removed here.
+ */
+function pileupPageSource() {
+  var clone = document.documentElement.cloneNode(true);
+  [].forEach.call(clone.querySelectorAll('.pileup-mm-arrow'), function (n) {
+    n.parentNode.removeChild(n);
+  });
+  [].forEach.call(clone.querySelectorAll('.pileup-labels'), function (n) {
+    n.innerHTML = '';
+  });
+  [].forEach.call(clone.querySelectorAll('body > div'), function (n) {
+    if (n.style && n.style.position === 'fixed') n.parentNode.removeChild(n);
+  });
+  return '<!DOCTYPE html>\n' + clone.outerHTML;
+}
+
+/* One SVG track, rasterised.
+ *
+ * A serialised SVG is loaded as its own document, so the page's stylesheet does
+ * not reach it and every class-based fill would come out black. The stylesheet
+ * is copied into the SVG so the rules travel with it -- the custom properties
+ * included, since the SVG root is that document's :root and the variables
+ * resolve against it.
+ */
+function svgToImage(node, css) {
+  var copy = node.cloneNode(true);
+  copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  var style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = css;
+  copy.insertBefore(style, copy.firstChild);
+  var url = 'data:image/svg+xml;charset=utf-8,'
+    + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    img.onload = function () { resolve(img); };
+    img.onerror = function () { reject(new Error('could not rasterise a track')); };
+    img.src = url;
+  });
+}
+
+/* The plot as one image: every group's tracks and canvases, stacked as they are
+ * drawn, at the full width of the reference rather than the scrolled window.
+ */
+function pileupImageBlob() {
+  var panes = [].slice.call(document.querySelectorAll('.pileup-scroll'));
+  if (!panes.length) return Promise.reject(new Error('nothing to copy'));
+
+  var sheet = document.querySelector('style');
+  var css = sheet ? sheet.textContent : '';
+  var theme = document.documentElement.getAttribute('data-theme');
+  // The clone has no ancestor carrying data-theme, so a dark page would
+  // rasterise with the light values. Re-point the dark rules at :root.
+  if (theme === 'dark') {
+    css = css.replace(/\[data-theme="dark"\]/g, ':root');
+  }
+
+  var jobs = [];
+  var rows = [];
+  var total = 0, width = 0;
+  panes.forEach(function (pane, pi) {
+    if (pi) total += 12;                      // a gap between groups
+    [].forEach.call(pane.children, function (node) {
+      var tag = node.tagName.toLowerCase();
+      var w = node.width && node.width.baseVal
+        ? node.width.baseVal.value : node.width;
+      var h = node.height && node.height.baseVal
+        ? node.height.baseVal.value : node.height;
+      if (tag === 'canvas') {
+        // A canvas is sized in device pixels; its CSS box is the drawn size.
+        w = parseFloat(node.style.width) || node.width;
+        h = parseFloat(node.style.height) || node.height;
+      }
+      if (!w || !h) return;
+      var margin = parseFloat(getComputedStyle(node).marginBottom) || 0;
+      rows.push({node: node, tag: tag, y: total, w: w, h: h});
+      total += h + margin;
+      if (w > width) width = w;
+    });
+  });
+  if (!rows.length) return Promise.reject(new Error('nothing to copy'));
+
+  rows.forEach(function (row) {
+    jobs.push(row.tag === 'canvas'
+      ? Promise.resolve(row.node)
+      : svgToImage(row.node, css));
+  });
+
+  return Promise.all(jobs).then(function (images) {
+    var scale = window.devicePixelRatio || 1;
+    var out = document.createElement('canvas');
+    out.width = Math.ceil(width * scale);
+    out.height = Math.ceil(total * scale);
+    var ctx = out.getContext('2d');
+    ctx.scale(scale, scale);
+    // The page ground, so the image is not transparent where nothing is drawn.
+    ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+    ctx.fillRect(0, 0, width, total);
+    images.forEach(function (img, i) {
+      ctx.drawImage(img, 0, rows[i].y, rows[i].w, rows[i].h);
+    });
+    return new Promise(function (resolve, reject) {
+      out.toBlob(function (blob) {
+        blob ? resolve(blob) : reject(new Error('could not encode the image'));
+      }, 'image/png');
+    });
+  });
+}
+
+function copyPileup(kind) {
+  if (kind === 'image') {
+    return pileupImageBlob().then(function (blob) {
+      return navigator.clipboard.write([
+        new ClipboardItem({'image/png': blob})
+      ]);
+    });
+  }
+  return navigator.clipboard.writeText(pileupPageSource());
+}
+
+/* Wire the buttons, and say what happened. A copy leaves no trace on the page,
+ * so without a word back there is no way to tell it worked.
+ */
+function bindCopyButtons() {
+  [].forEach.call(document.querySelectorAll('.sv-copy'), function (btn) {
+    btn.addEventListener('click', function () {
+      var was = btn.textContent;
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      btn.textContent = 'Copying…';
+      copyPileup(btn.dataset.copy).then(function () {
+        btn.textContent = 'Copied';
+      }, function (err) {
+        btn.textContent = 'Copy failed';
+        btn.title = String(err && err.message || err);
+      }).then(function () {
+        setTimeout(function () {
+          btn.textContent = was;
+          delete btn.dataset.busy;
+        }, 1400);
+      });
+    });
+  });
+}

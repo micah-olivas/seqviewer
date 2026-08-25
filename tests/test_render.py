@@ -22,13 +22,27 @@ def test_renders_a_complete_document():
     assert "<title>test view</title>" in html
 
 
+#: The SVG namespace. A name, not an address -- it identifies the vocabulary and
+#: is never fetched -- but it is the one http: string the page is allowed.
+SVG_NS = "http://www.w3.org/2000/svg"
+
+
 def test_page_is_self_contained():
     """A strict reading: no network requests of any kind."""
-    html = render(_view())
+    html = render(_view()).replace(SVG_NS, "")
     assert "http://" not in html
     assert "https://" not in html
     assert not re.search(r"<script[^>]+src=", html)
     assert not re.search(r"<link[^>]+stylesheet", html)
+
+
+def test_the_only_url_shaped_string_is_the_svg_namespace():
+    """Rasterising a track needs the namespace, both to build the style element
+    and on the serialised root. Nothing else may look like an address.
+    """
+    html = render(_view())
+    found = set(re.findall(r"https?://[^\s\"'<>)]+", html))
+    assert found == {SVG_NS}, found
 
 
 def test_title_is_escaped():
@@ -746,3 +760,76 @@ def test_the_focus_region_is_not_filled_the_same_as_the_flanks():
         assert _PALETTE[theme]["region-focus"] != _PALETTE[theme]["region"]
     css = render(_view())
     assert "fill: var(--cv-region-focus);" in css
+
+
+# --- Taking the page away --------------------------------------------------
+
+def test_the_masthead_offers_both_copies():
+    html = render(_view())
+    assert 'data-copy="html"' in html
+    assert 'data-copy="image"' in html
+    assert ">Copy HTML<" in html and ">Copy image<" in html
+
+
+def test_each_button_says_what_it_does_on_hover():
+    html = render(_view())
+    buttons = re.findall(r"<button[^>]*class=\"sv-copy\"[^>]*>", html)
+    assert len(buttons) == 2
+    for tag in buttons:
+        assert 'title="' in tag
+        # A description, not a restatement of the label.
+        title = re.search(r'title="([^"]+)"', tag).group(1)
+        assert len(title) > 40, title
+
+
+def test_the_copied_source_is_the_page_as_it_arrived():
+    """drawPileup appends as it runs; serialising the live document would bake
+    those in, and re-opening such a file would draw a second set of arrows.
+    """
+    html = render(_view())
+    body = html[html.index("function pileupPageSource"):]
+    body = body[:body.index("\n}")]
+    assert ".pileup-mm-arrow" in body
+    assert ".pileup-labels" in body
+    assert "position === 'fixed'" in body
+    assert "'<!DOCTYPE html>" in body
+
+
+def test_a_rasterised_track_carries_the_stylesheet_with_it():
+    """A serialised SVG is its own document, so class-based fills would
+    otherwise come out black.
+    """
+    html = render(_view())
+    body = html[html.index("function svgToImage"):]
+    body = body[:body.index("\n}")]
+    assert "style.textContent = css" in body
+    assert "data:image/svg+xml" in body
+
+
+def test_the_dark_theme_survives_rasterisation():
+    """The clone has no ancestor carrying data-theme, so the dark rules have to
+    be re-pointed at the SVG's own root or the image comes out light.
+    """
+    html = render(_view())
+    assert 'css.replace(/\\[data-theme="dark"\\]/g' in html
+
+
+def test_the_image_is_the_whole_reference_not_the_visible_window():
+    html = render(_view())
+    body = html[html.index("function pileupImageBlob"):]
+    assert "toBlob" in body
+    assert "'image/png'" in body
+    # Sized from each element's own width, not from the pane's client box.
+    assert "clientWidth" not in body[:body.index("return new Promise")]
+
+
+def test_the_buttons_report_what_happened():
+    """A copy leaves no mark on the page, so the button has to say so."""
+    html = render(_view())
+    assert "'Copied'" in html
+    assert "'Copy failed'" in html
+
+
+def test_the_buttons_are_bound_after_the_groups_exist():
+    html = render(_view())
+    assert html.index("bindCopyButtons();") > html.rindex("drawPileup(")

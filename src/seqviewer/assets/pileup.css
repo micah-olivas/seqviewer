@@ -136,6 +136,30 @@ html, body {
 .sv-glyph-warn { color: var(--warn); }
 .sv-glyph-bad { color: var(--bad); }
 .sv-glyph-neutral { color: var(--neutral); }
+/* --- Take-away buttons ---
+   A copy leaves no mark on the page, so the button says what happened in its own
+   label rather than trusting the reader to check the clipboard. */
+.sv-actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+}
+.sv-copy {
+    font: 600 0.7rem/1 var(--mono);
+    color: var(--text);
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 2px;
+    padding: 0.35rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.sv-copy:hover {
+    border-color: var(--muted);
+}
+.sv-copy:active {
+    background: var(--neutral-bg);
+}
 /* --- Key: grouped by what the mark means --- */
 .sv-key {
     display: flex;
