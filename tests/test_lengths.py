@@ -1286,12 +1286,12 @@ def test_arial_is_asked_for_first():
     assert "DejaVu Sans" in _STYLE["font.sans-serif"]   # and a fallback
 
 
-def test_the_box_and_the_grid_are_left_off():
+def test_the_panel_is_closed_on_all_four_sides():
     from seqviewer.plot import _STYLE
 
-    assert _STYLE["axes.spines.top"] is False
-    assert _STYLE["axes.spines.right"] is False
-    assert "axes.grid" not in _STYLE                # never turned on
+    assert _STYLE["axes.spines.top"] is True
+    assert _STYLE["axes.spines.right"] is True
+    assert "axes.grid" not in _STYLE                # gridlines stay off
 
 
 def test_the_style_does_not_leak_into_the_callers_settings(tmp_path):

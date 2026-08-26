@@ -266,7 +266,7 @@ seqview lengths reads/ --png lengths.pdf       # the suffix picks the format
 ```
 
 It is drawn to journal-figure conventions: Arial at 7–8 pt, thin rules, ticks
-outward, no gridlines and no box, the panel 183 mm across — the width of a
+outward, no gridlines, a full box, the panel 183 mm across — the width of a
 two-column figure — and 300 dpi. The suffix chooses the format, and a PDF or SVG
 keeps its text as text, so the figure can still be edited in Illustrator.
 

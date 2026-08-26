@@ -5,7 +5,7 @@ Draws the binning the terminal histogram draws, from the same
 where the axis falls and which reads are outside it.
 
 The styling follows the conventions of a journal figure: a sans-serif face at
-small sizes, thin rules, ticks outward, no gridlines and no box, and the panel
+small sizes, thin rules, ticks outward, no gridlines, a full box, and the panel
 sized to the width a two-column figure is printed at.  The file's suffix chooses
 the format, so a PDF or an SVG keeps its text as text and can be edited in a
 drawing program.
@@ -54,8 +54,9 @@ _STYLE = {
     "axes.linewidth": 0.6,
     "axes.edgecolor": _INK,
     "axes.labelcolor": _INK,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
+    # All four spines, so the panel is closed on every side.
+    "axes.spines.top": True,
+    "axes.spines.right": True,
     "text.color": _INK,
     "xtick.color": _INK,
     "ytick.color": _INK,
