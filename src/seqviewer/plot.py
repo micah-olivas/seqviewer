@@ -82,6 +82,18 @@ class PngUnavailable(RuntimeError):
     """Raised when matplotlib is not installed."""
 
 
+def _count_label(value, _position=None) -> str:
+    """Return a tick as a plain count.
+
+    A log axis is otherwise labelled in powers of ten, which reads as an
+    exponent rather than as a number of reads.  Values below one cannot be a
+    count and only appear where an axis is drawn past its lowest bar.
+    """
+    if value < 1:
+        return f"{value:g}"
+    return f"{int(round(value)):,}"
+
+
 def _figures(summary: Summary) -> str:
     """Return the one line of figures that sits under the panel."""
     return (f"n = {summary.reads:,} reads · median {summary.median:,} bp · "
@@ -133,7 +145,7 @@ def write_png(
         import matplotlib
         matplotlib.use("Agg")           # a file, so no display is needed
         import matplotlib.pyplot as plt
-        from matplotlib.ticker import FuncFormatter
+        from matplotlib.ticker import FuncFormatter, NullFormatter
     except ImportError as exc:          # pragma: no cover - matplotlib is opt-in
         raise PngUnavailable(
             "drawing a figure needs matplotlib: pip install 'seqviewer[plot]'"
@@ -170,10 +182,13 @@ def write_png(
         if title:
             axes.set_title(title, loc="left", pad=6)
 
-        thousands = FuncFormatter(lambda v, _: f"{int(v):,}")
-        axes.xaxis.set_major_formatter(thousands)
-        if not log:
-            axes.yaxis.set_major_formatter(thousands)
+        counts = FuncFormatter(_count_label)
+        axes.xaxis.set_major_formatter(counts)
+        axes.yaxis.set_major_formatter(counts)
+        if log:
+            # Decades carry the labels; the minor ticks between them would
+            # otherwise be labelled too and crowd the axis.
+            axes.yaxis.set_minor_formatter(NullFormatter())
 
         # The figures go under the panel, where they do not sit over a bar.
         figure.text(0.012, 0.075 if note else 0.045, _figures(summary),

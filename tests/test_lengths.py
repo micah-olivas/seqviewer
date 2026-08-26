@@ -1390,3 +1390,28 @@ def test_bars_meet_once_they_are_thin():
 
     assert EDGE_UNTIL < 240                     # so the default has no edge
     assert EDGE_UNTIL > lengths.DEFAULT_BINS    # and a coarse figure does
+
+
+def test_ticks_are_labelled_as_plain_counts():
+    """A log axis is otherwise labelled in powers of ten."""
+    from seqviewer.plot import _count_label
+
+    assert _count_label(10) == "10"
+    assert _count_label(1000) == "1,000"
+    assert _count_label(100000) == "100,000"
+    assert "e" not in _count_label(1000000) and "^" not in _count_label(1000000)
+
+
+def test_a_tick_that_cannot_be_a_count_keeps_its_decimal():
+    """Below one is not a read count, and rounding it would print 0."""
+    from seqviewer.plot import _count_label
+
+    assert _count_label(0.1) == "0.1"
+
+
+def test_a_log_tick_lands_on_a_whole_count():
+    """Floating point puts a decade at 999.9999; it must not label as 999."""
+    from seqviewer.plot import _count_label
+
+    assert _count_label(999.9999999) == "1,000"
+    assert _count_label(1000.0000001) == "1,000"
