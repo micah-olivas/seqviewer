@@ -174,7 +174,8 @@ definition of that number, and both pages read it.
 
 `seqviewer-lengths` reads the length of every record in a run and draws the
 distribution as a histogram in the terminal. It does no alignment, so it needs
-neither the `cli` extra nor `minimap2` on PATH.
+neither the `cli` extra nor `minimap2` on PATH. The `fast` extra adds numpy,
+which about halves the time to scan a large file.
 
 ```bash
 seqviewer-lengths reads/
@@ -195,8 +196,41 @@ the axis covers and `--bulk 100` spans the full range.
 `--bins` and `--width` set the bin count and the output width, which defaults to
 the terminal's. `--log` scales bar length by `log(1 + count)`, leaving the axis
 labels linear. `--per-file` draws one histogram per FASTQ instead of one for the
-directory. Lengths are read as a stream, so a deep run does not have to fit in
-memory.
+directory.
+
+### Scanning a large run
+
+The scan never keeps the lengths themselves. It counts how many reads have each
+length, and a run holds far fewer distinct lengths than reads, so what is in
+memory stays small however large the file gets. The median, the N50 and the
+percentiles that set the axis are then counted off those tallies: they are exact,
+with nothing sampled or approximated.
+
+Where numpy is installed, each block's newlines are located as an array and the
+gaps between them taken as the line lengths, which avoids building an object per
+line. Without it, a block is split in one call and every fourth line taken. The
+two report identical figures, which the tests check over truncated records, CRLF
+endings, records spanning a block boundary, and gzip. `--slow` forces the
+pure-Python scanner.
+
+On a 2.00 GiB synthetic FASTQ of 1,290,734 reads already in the page cache,
+Python 3.11 on an Apple M3 Pro:
+
+| scan | time | throughput | peak RSS |
+| --- | --- | --- | --- |
+| every length in a list | 1.41 s | 1.42 GiB/s | 106 MB |
+| tally, pure Python | 1.29 s | 1.55 GiB/s | 48 MB |
+| tally, array | 0.76 s | 2.64 GiB/s | 42 MB |
+
+Peak memory is what the tally buys: at 0.50 GiB the list needs 62 MB and at
+2.00 GiB it needs 106 MB, while the array tally holds 42 MB at both.
+`scripts/bench_lengths.py` produces this table. A first read from disk is bound
+by the disk rather than by the scanner, so run it twice to compare scanners.
+
+Progress is reported on stderr while scanning a run of at least 32 MiB, which
+leaves the histogram on stdout redirectable on its own; `--no-progress` turns it
+off. Colour is used when stdout is a terminal and `NO_COLOR` is unset;
+`--no-color` turns it off.
 
 ## Reference and Feature
 

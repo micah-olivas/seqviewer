@@ -21,7 +21,10 @@ annot = ["biopython>=1.80"]
 # Everything the seqviewer-pileup command needs: it aligns reads and reads an
 # annotated reference, so it is align plus annot under one name.
 cli = ["pysam>=0.20", "biopython>=1.80"]
-dev = ["pytest>=7", "biopython>=1.80"]
+dev = ["pytest>=7", "biopython>=1.80", "numpy>=1.20"]
+# Scanning read lengths with array operations rather than a line at a
+# time. The figures reported are the same either way; the scan is faster.
+fast = ["numpy>=1.20"]
 
 [project.scripts]
 seqviewer-pileup = "seqviewer.cli:main"

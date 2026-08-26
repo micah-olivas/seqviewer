@@ -32,10 +32,12 @@ from __future__ import annotations
 import argparse
 import gzip
 import itertools
+import os
 import random
 import shutil
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 from . import lengths
@@ -496,6 +498,123 @@ def main(argv=None):
     return 0
 
 
+#: Bytes a run must hold before a scan reports progress.  Below it the scan is
+#: over before a bar would be read.
+PROGRESS_AFTER_BYTES = 32 << 20
+
+#: Seconds between redraws of the progress line.
+PROGRESS_INTERVAL = 0.1
+
+#: Seconds a scan must take before its rate is reported alongside the figures.
+SCAN_NOTE_AFTER = 1.0
+
+#: Seconds a scan must run before a rate is worth dividing out.
+RATE_AFTER = 0.05
+
+
+def _si_bytes(count):
+    """Format a byte count in binary multiples."""
+    for unit, size in (("GiB", 1 << 30), ("MiB", 1 << 20), ("KiB", 1 << 10)):
+        if count >= size:
+            return f"{count / size:.1f} {unit}"
+    return f"{count} B"
+
+
+def _si_reads(count):
+    """Format a read count, abbreviated past a thousand."""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.0f}k"
+    return str(count)
+
+
+def _duration(seconds):
+    """Format a duration: to a tenth of a second under ten, then whole seconds,
+    then minutes and seconds.  A fast scan otherwise reports as 0s or 1s.
+    """
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+class ScanProgress:
+    """One rewritten line reporting the progress of a scan, on stderr.
+
+    Drawn only where stderr is a terminal and the run holds at least
+    :data:`PROGRESS_AFTER_BYTES`, so a small run and a redirected one print
+    nothing.  Progress goes to stderr so that the histogram on stdout can be
+    redirected to a file on its own.
+
+    The bytes and reads seen are recorded whether or not the line is drawn, so
+    the scan can be reported once it finishes.
+    """
+
+    def __init__(self, width, palette=None, enabled=True, stream=None):
+        self.width = max(32, width)
+        self.palette = palette
+        self.stream = stream if stream is not None else sys.stderr
+        self.enabled = enabled and self.stream.isatty()
+        self.started = time.monotonic()
+        self.took = 0.0
+        self.last = 0.0
+        self.drawn = False
+        self.bytes = 0
+        self.reads = 0
+
+    def update(self, done, total, reads):
+        """Record progress, and redraw the line if it is due."""
+        self.bytes, self.reads = done, reads
+        self.took = time.monotonic() - self.started
+        if not self.enabled or total < PROGRESS_AFTER_BYTES:
+            return
+        now = time.monotonic()
+        if done < total and now - self.last < PROGRESS_INTERVAL:
+            return
+        self.last = now
+        share = min(1.0, done / total) if total else 1.0
+        text = f"{share * 100:3.0f}%  {_si_reads(reads)} reads"
+        if self.took >= RATE_AFTER:
+            # Below this the elapsed time is too short to divide by, and the
+            # rate it gives is off by orders of magnitude.
+            rate = done / self.took
+            left = (total - done) / rate if rate else 0.0
+            text += f"  {_si_bytes(int(rate))}/s  {_duration(left)} left"
+        room = self.width - len(text) - 4
+        if room >= 12:
+            fill = int(round(room * share))
+            done_cells, todo_cells = "█" * fill, "░" * (room - fill)
+            if self.palette:
+                bar = (f"{self.palette.bar}{done_cells}{self.palette.reset}"
+                       f"{self.palette.tail}{todo_cells}{self.palette.reset}")
+            else:
+                bar = done_cells + todo_cells
+            line = f"{bar}  {text}"
+        else:
+            line = text[:self.width]
+        self.stream.write("\r\x1b[2K" + line)
+        self.stream.flush()
+        self.drawn = True
+
+    def clear(self):
+        """Erase the line, leaving the cursor where the next output starts."""
+        if self.drawn:
+            self.stream.write("\r\x1b[2K")
+            self.stream.flush()
+            self.drawn = False
+
+    def note(self):
+        """Return how much was scanned and how fast, or None if it was quick."""
+        if self.took < SCAN_NOTE_AFTER or not self.bytes:
+            return None
+        rate = _si_bytes(int(self.bytes / self.took))
+        return (f"scanned {_si_bytes(self.bytes)} in "
+                f"{_duration(self.took)} at {rate}/s")
+
+
 def lengths_main(argv=None):
     """Print a read-length histogram for a directory of FASTQs, or one file."""
     parser = argparse.ArgumentParser(
@@ -525,6 +644,15 @@ def lengths_main(argv=None):
     parser.add_argument("--per-file", action="store_true",
                         help="one histogram per FASTQ instead of one for the "
                              "whole directory")
+    parser.add_argument("--no-color", action="store_true",
+                        help="write plain text. Colour is already left out "
+                             "when stdout is not a terminal, or when NO_COLOR "
+                             "is set")
+    parser.add_argument("--no-progress", action="store_true",
+                        help="do not report progress while scanning")
+    parser.add_argument("--slow", action="store_true",
+                        help="scan without numpy, which is slower on a large "
+                             "file and reports the same figures")
     args = parser.parse_args(argv)
 
     paths = fastq_paths(args.reads)
@@ -533,25 +661,43 @@ def lengths_main(argv=None):
         return 1
 
     width = args.width or shutil.get_terminal_size((80, 24)).columns
+    palette = None
+    if not (args.no_color or os.environ.get("NO_COLOR")
+            or not sys.stdout.isatty()):
+        palette = lengths.PALETTE
+
+    def dim(text):
+        return f"{palette.tail}{text}{palette.reset}" if palette else text
+
     groups = ([(p.name, [p]) for p in paths] if args.per_file
               else [(str(args.reads), paths)])
 
     for index, (label, group) in enumerate(groups):
         if index:
             print()
-        counts = list(lengths.read_lengths(group))
         files = f"{len(group)} file{'s' if len(group) != 1 else ''}"
-        print(f"{label}  ·  {files}")
-        if not counts:
+        print(f"{label}  {dim('·')}  {dim(files)}")
+
+        bar = ScanProgress(width, palette=palette,
+                           enabled=not args.no_progress)
+        counts = lengths.count_lengths(group, progress=bar.update,
+                                       fast=False if args.slow else None)
+        bar.clear()
+
+        if counts.empty:
             print("no reads")
             continue
-        summary, binning = lengths.distribution(counts, args.bins, args.bulk)
+        summary = lengths.summarise_counts(counts)
+        binning = lengths.bin_counts(counts, args.bins, args.bulk)
         print()
-        for line in lengths.histogram(binning, width, args.log):
+        for line in lengths.histogram(binning, width, args.log, palette):
             print(line)
         print()
         for line in lengths.summary_lines(summary, binning):
             print(textwrap.fill(line, width))
+        note = bar.note()
+        if note:
+            print(dim(note))
     return 0
 
 

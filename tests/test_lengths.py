@@ -4,11 +4,22 @@ Pure arithmetic and text, so none of this needs a terminal or a real run.
 """
 
 import gzip
+import re
 
+import pytest
+
+from seqviewer import lengths
 from seqviewer.lengths import (
     DEFAULT_BINS, DEFAULT_BULK, Bin, Binning, bin_lengths, distribution,
-    histogram, read_lengths, summarise, summary_lines,
+    histogram, read_lengths, summarise, summarise_counts, summary_lines,
 )
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")   # colours, and the erase code
+
+
+def _strip(text):
+    """Return *text* without its ANSI codes."""
+    return _ANSI.sub("", text)
 
 
 def _fastq(path, lengths, prefix="r"):
@@ -261,6 +272,155 @@ def test_an_empty_run_reports_no_reads():
     assert summary_lines(summarise([])) == ["no reads"]
 
 
+# --- The two scanners -----------------------------------------------------
+
+SCANNERS = [False] + ([True] if lengths.HAVE_NUMPY else [])
+
+
+def _tally(path, fast):
+    return lengths.count_lengths([path], fast=fast).items()
+
+
+@pytest.mark.parametrize("body,label", [
+    (b"", "an empty file"),
+    (b"@r\nAAAA\n+\nIIII\n", "one record"),
+    (b"@r\nAAAA\n+\nIIII", "one record, no trailing newline"),
+    (b"@r\nAAAA\n+\nIIII\n@s\nAA\n+\n", "a record truncated after the plus"),
+    (b"@r\nAAAA\n+\nIIII\n@s\nAA\n", "a record truncated after the sequence"),
+    (b"@r\nAAAA\n+\nIIII\n@s\n", "a record truncated after the header"),
+    (b"@r\n\n+\n\n", "a zero-length read"),
+    (b"@r\r\nAAAA\r\n+\r\nIIII\r\n", "CRLF line endings"),
+    (b"@r\r\nAAAA\r\n+\r\nIIII", "CRLF with no trailing newline"),
+    (b"@r\nAAAA\n+\nIIII\n" * 500, "many identical records"),
+])
+def test_the_scanners_agree(tmp_path, body, label):
+    """The array scanner and the pure-Python one must return the same tally,
+    including where a file stops part way through a record.
+    """
+    path = tmp_path / "a.fastq"
+    path.write_bytes(body)
+    tallies = {fast: _tally(path, fast) for fast in SCANNERS}
+    assert len(set(map(tuple, tallies.values()))) == 1, (label, tallies)
+
+
+def test_the_scanners_agree_across_block_boundaries(tmp_path):
+    """A record split across two reads is counted once.  The block size is
+    lowered so the boundary is crossed by a small file.
+    """
+    path = tmp_path / "a.fastq"
+    with open(path, "wb") as handle:
+        for i in range(4000):
+            n = 40 + (i % 700)
+            handle.write(b"@r%d\n%s\n+\n%s\n"
+                         % (i, b"A" * n, b"I" * n))
+
+    original = lengths._BLOCK
+    try:
+        for block in (64, 1000, 4096, 1 << 16):
+            lengths._BLOCK = block
+            tallies = [_tally(path, fast) for fast in SCANNERS]
+            assert len(set(map(tuple, tallies))) == 1, block
+            assert sum(c for _, c in tallies[0]) == 4000
+    finally:
+        lengths._BLOCK = original
+
+
+def test_the_scanners_agree_on_a_record_longer_than_a_block(tmp_path):
+    """One read longer than the block size, so the carry path is taken."""
+    path = tmp_path / "a.fastq"
+    n = 5000
+    path.write_bytes(b"@r\n%s\n+\n%s\n" % (b"A" * n, b"I" * n))
+    original = lengths._BLOCK
+    try:
+        lengths._BLOCK = 512
+        tallies = [_tally(path, fast) for fast in SCANNERS]
+        assert len(set(map(tuple, tallies))) == 1
+        assert tallies[0] == [(n, 1)]
+    finally:
+        lengths._BLOCK = original
+
+
+def test_the_scanners_agree_on_gzip(tmp_path):
+    path = tmp_path / "a.fastq.gz"
+    with gzip.open(path, "wt") as handle:
+        for i in range(300):
+            n = 100 + i
+            handle.write(f"@r{i}\n{'A' * n}\n+\n{'I' * n}\n")
+    tallies = [_tally(path, fast) for fast in SCANNERS]
+    assert len(set(map(tuple, tallies))) == 1
+    assert sum(c for _, c in tallies[0]) == 300
+
+
+def test_the_tally_matches_reading_every_length(tmp_path):
+    """count_lengths and read_lengths describe the same file."""
+    path = _fastq(tmp_path / "a.fastq", [800] * 50 + [90, 4000, 4000])
+    streamed = sorted(lengths.read_lengths([path]))
+    for fast in SCANNERS:
+        counts = lengths.count_lengths([path], fast=fast)
+        assert counts.total == len(streamed)
+        assert counts.bases == sum(streamed)
+        assert counts.shortest == streamed[0]
+        assert counts.longest == streamed[-1]
+
+
+def test_requiring_the_array_scanner_without_numpy_is_an_error(monkeypatch,
+                                                              tmp_path):
+    path = _fastq(tmp_path / "a.fastq", [10])
+    monkeypatch.setattr(lengths, "HAVE_NUMPY", False)
+    with pytest.raises(RuntimeError):
+        lengths.count_lengths([path], fast=True)
+
+
+# --- The tally ------------------------------------------------------------
+
+def test_the_tally_is_bounded_by_the_length_range_not_the_read_count():
+    """Why a multi-gigabyte file can be scanned in fixed memory."""
+    few = lengths.LengthCounts.from_lengths([800] * 10)
+    many = lengths.LengthCounts.from_lengths([800] * 1_000_000)
+    assert len(few.items()) == len(many.items()) == 1
+    assert many.total == 1_000_000
+
+
+def test_the_tally_reports_the_same_figures_as_a_list_of_lengths():
+    values = [780 + (i * 7) % 41 for i in range(1000)] + [4000]
+    counts = lengths.LengthCounts.from_lengths(values)
+    direct = summarise(values)
+    assert summarise_counts(counts) == direct
+    assert counts.quantile(0.5) == bin_lengths(values).low
+
+
+def test_a_quantile_of_an_empty_tally_is_zero():
+    counts = lengths.LengthCounts()
+    assert counts.total == 0 and counts.quantile(50) == 0
+    assert counts.median == 0 and counts.n50 == 0 and counts.mean == 0.0
+
+
+# --- Colour ---------------------------------------------------------------
+
+def test_a_palette_does_not_change_the_visible_width():
+    """Codes are added after the columns are laid out."""
+    binning = bin_lengths([800] * 500 + [80, 9000])
+    plain = histogram(binning, width=80)
+    painted = histogram(binning, width=80, palette=lengths.PALETTE)
+    assert [_strip(line) for line in painted] == plain
+
+
+def test_a_palette_marks_the_peak_apart_from_the_other_bars():
+    binning = bin_lengths([800] * 500 + [400] * 5, bulk=100)
+    painted = histogram(binning, width=80, palette=lengths.PALETTE)
+    assert sum(lengths.PALETTE.peak in line for line in painted) == 1
+
+
+def test_a_palette_dims_the_clipped_tails():
+    binning = bin_lengths([800] * 1000 + [80, 9000])
+    painted = histogram(binning, width=80, palette=lengths.PALETTE)
+    assert sum(lengths.PALETTE.tail in line for line in painted) == 3  # + header
+
+
+def test_no_codes_are_written_without_a_palette():
+    lines = histogram(bin_lengths([800] * 20 + [90, 9000]), width=80)
+    assert not any("\x1b" in line for line in lines)
+
 # --- The command line -----------------------------------------------------
 
 def test_the_command_is_wired_up():
@@ -295,3 +455,159 @@ def test_per_file_draws_one_histogram_each(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "a.fastq" in out and "b.fastq" in out
     assert out.count("20 reads") == 2
+
+
+# --- Progress and formatting ----------------------------------------------
+
+class _Terminal:
+    """A stream that reports itself a terminal and keeps what was written."""
+
+    def __init__(self):
+        self.chunks = []
+
+    def isatty(self):
+        return True
+
+    def write(self, text):
+        self.chunks.append(text)
+
+    def flush(self):
+        pass
+
+    @property
+    def text(self):
+        return "".join(self.chunks)
+
+
+def test_a_small_run_draws_no_progress():
+    """Below the threshold the scan is over before a bar could be read."""
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term)
+    bar.update(1 << 10, PROGRESS_AFTER_BYTES - 1, 4)
+    assert term.text == ""
+
+
+def test_a_large_run_draws_progress():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term)
+    bar.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 4, 12_345)
+    assert "25%" in term.text
+    assert "12k reads" in term.text
+    assert "█" in term.text and "░" in term.text
+
+
+def test_progress_is_recorded_even_when_it_is_not_drawn():
+    """The scan is reported once it finishes whether or not a bar was shown."""
+    from seqviewer.cli import ScanProgress
+
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term, enabled=False)
+    bar.update(5 << 30, 5 << 30, 900)
+    assert term.text == ""
+    assert bar.bytes == 5 << 30 and bar.reads == 900
+
+
+def test_progress_redraws_are_throttled():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    total = PROGRESS_AFTER_BYTES * 10
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term)
+    for i in range(1, 40):
+        bar.update(i * (total // 100), total, i * 100)
+    assert 1 <= term.text.count("\r") <= 4      # not once per call
+
+
+def test_progress_always_draws_the_last_position():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    total = PROGRESS_AFTER_BYTES * 10
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term)
+    bar.update(total // 2, total, 10)
+    bar.update(total, total, 20)                # not throttled away
+    assert "100%" in term.text
+
+
+def test_clearing_progress_erases_the_line():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    term = _Terminal()
+    bar = ScanProgress(80, stream=term)
+    bar.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES, 5)
+    bar.clear()
+    assert term.text.endswith("\r\x1b[2K")
+
+
+def test_a_progress_line_fits_the_width():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, ScanProgress
+
+    for width in (32, 60, 80, 200):
+        term = _Terminal()
+        bar = ScanProgress(width, stream=term)
+        bar.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 3, 1_500_000)
+        drawn = _strip(term.text).replace("\r", "")
+        assert len(drawn) <= max(32, width)
+
+
+def test_a_quick_scan_is_not_reported():
+    from seqviewer.cli import ScanProgress
+
+    bar = ScanProgress(80, stream=_Terminal())
+    bar.update(1 << 30, 1 << 30, 10)            # took no measurable time
+    assert bar.note() is None
+
+
+def test_byte_and_read_counts_are_abbreviated():
+    from seqviewer.cli import _duration, _si_bytes, _si_reads
+
+    assert _si_bytes(512) == "512 B"
+    assert _si_bytes(1 << 20) == "1.0 MiB"
+    assert _si_bytes(3 << 30) == "3.0 GiB"
+    assert _si_reads(42) == "42"
+    assert _si_reads(4_200) == "4k"
+    assert _si_reads(4_200_000) == "4.2M"
+    assert _duration(0.44) == "0.4s"
+    assert _duration(42) == "42s"
+    assert _duration(125) == "2m05s"
+
+
+# --- The new flags --------------------------------------------------------
+
+def test_colour_is_left_out_when_stdout_is_not_a_terminal(tmp_path, capsys):
+    """pytest captures stdout, so this is the path a pipe takes."""
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 40)
+    lengths_main([str(tmp_path), "--width", "80"])
+    assert "\x1b" not in capsys.readouterr().out
+
+
+def test_no_color_is_accepted(tmp_path, capsys):
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 40)
+    assert lengths_main([str(tmp_path), "--no-color"]) == 0
+    assert "\x1b" not in capsys.readouterr().out
+
+
+def test_the_slow_scanner_gives_the_same_output(tmp_path, capsys):
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [780 + (i * 7) % 41 for i in range(400)]
+           + [90, 4000])
+    lengths_main([str(tmp_path), "--width", "80"])
+    fast = capsys.readouterr().out
+    lengths_main([str(tmp_path), "--width", "80", "--slow"])
+    assert capsys.readouterr().out == fast
+
+
+def test_no_progress_is_accepted(tmp_path, capsys):
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 20)
+    assert lengths_main([str(tmp_path), "--no-progress"]) == 0
