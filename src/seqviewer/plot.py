@@ -32,9 +32,9 @@ DPI = 300
 #: height leaves the panel about twice as wide as it is tall.
 FIGSIZE = (7.2, 3.6)
 
-#: The bars.  One muted colour rather than a scale: a histogram of one variable
-#: carries no second quantity for colour to stand for.
-_BAR = "#3f6d8e"
+#: The bars, tab10 blue.  One colour rather than a scale: a histogram of one
+#: variable carries no second quantity for colour to stand for.
+_BAR = "#1f77b4"
 
 _INK = "#1a1a1a"
 _NOTE = "#595959"
