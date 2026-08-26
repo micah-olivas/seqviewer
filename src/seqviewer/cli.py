@@ -33,9 +33,12 @@ import argparse
 import gzip
 import itertools
 import random
+import shutil
 import sys
+import textwrap
 from pathlib import Path
 
+from . import lengths
 from .align import Read, grid_from_reads
 from .cluster import cluster_rows
 from .genbank import load_reference
@@ -490,6 +493,65 @@ def main(argv=None):
 
     log_path = write_log(out, args, log_lines)
     print(f"Wrote {log_path.resolve()}")
+    return 0
+
+
+def lengths_main(argv=None):
+    """Print a read-length histogram for a directory of FASTQs, or one file."""
+    parser = argparse.ArgumentParser(
+        prog="seqviewer-lengths",
+        description="Plot the read-length distribution of a sequencing run as "
+                    "a histogram in the terminal. Takes a directory of FASTQs "
+                    "or a single file; .gz is read directly.")
+    parser.add_argument("reads",
+                        help="a directory of FASTQs, or a single FASTQ")
+    parser.add_argument("--bins", type=int, default=lengths.DEFAULT_BINS,
+                        metavar="N",
+                        help="bins across the axis (default "
+                             f"{lengths.DEFAULT_BINS})")
+    parser.add_argument("--bulk", type=float, default=lengths.DEFAULT_BULK,
+                        metavar="PCT",
+                        help="percent of reads the axis covers, centred "
+                             f"(default {lengths.DEFAULT_BULK:g}). Concatemers "
+                             "and other ultra-long artifacts otherwise reach "
+                             "the top of the axis on their own. 100 spans the "
+                             "full range")
+    parser.add_argument("--log", action="store_true",
+                        help="scale bar length by log(1 + count), which keeps "
+                             "the smaller bins of a peaked distribution "
+                             "distinguishable")
+    parser.add_argument("--width", type=int, metavar="COLS",
+                        help="output width (default: the terminal's, or 80)")
+    parser.add_argument("--per-file", action="store_true",
+                        help="one histogram per FASTQ instead of one for the "
+                             "whole directory")
+    args = parser.parse_args(argv)
+
+    paths = fastq_paths(args.reads)
+    if not paths:
+        print(f"no FASTQ files at {args.reads}", file=sys.stderr)
+        return 1
+
+    width = args.width or shutil.get_terminal_size((80, 24)).columns
+    groups = ([(p.name, [p]) for p in paths] if args.per_file
+              else [(str(args.reads), paths)])
+
+    for index, (label, group) in enumerate(groups):
+        if index:
+            print()
+        counts = list(lengths.read_lengths(group))
+        files = f"{len(group)} file{'s' if len(group) != 1 else ''}"
+        print(f"{label}  ·  {files}")
+        if not counts:
+            print("no reads")
+            continue
+        summary, binning = lengths.distribution(counts, args.bins, args.bulk)
+        print()
+        for line in lengths.histogram(binning, width, args.log):
+            print(line)
+        print()
+        for line in lengths.summary_lines(summary, binning):
+            print(textwrap.fill(line, width))
     return 0
 
 

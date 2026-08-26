@@ -170,6 +170,34 @@ disagreement, so a column half the reads have deleted reads as half disagreeing
 rather than as clean. `seqviewer.summary.mismatch_fractions` is the one
 definition of that number, and both pages read it.
 
+## Read lengths
+
+`seqviewer-lengths` reads the length of every record in a run and draws the
+distribution as a histogram in the terminal. It does no alignment, so it needs
+neither the `cli` extra nor `minimap2` on PATH.
+
+```bash
+seqviewer-lengths reads/
+```
+
+The axis covers the central 99% of reads rather than the full range, because a
+few concatemers otherwise reach the top of it on their own. For a product
+spread over 780–820 bp with three concatemers reaching 4,100 bp, the full range
+leaves 20 of 24 bins empty and puts all 1,000 product reads in one bar; the
+default axis spreads them over 21
+(`tests/test_lengths.py::test_clipping_keeps_the_product_resolved`).
+
+Reads outside the axis are counted in a row of their own, labelled with the
+extreme they reach, and every reported figure — minimum, maximum, median, mean,
+N50 — covers the whole run rather than the part in view. `--bulk` moves the share
+the axis covers and `--bulk 100` spans the full range.
+
+`--bins` and `--width` set the bin count and the output width, which defaults to
+the terminal's. `--log` scales bar length by `log(1 + count)`, leaving the axis
+labels linear. `--per-file` draws one histogram per FASTQ instead of one for the
+directory. Lengths are read as a stream, so a deep run does not have to fit in
+memory.
+
 ## Reference and Feature
 
 `Reference` and `Feature` describe a construct and are the substrate the

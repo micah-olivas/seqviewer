@@ -25,6 +25,7 @@ dev = ["pytest>=7", "biopython>=1.80"]
 
 [project.scripts]
 seqviewer-pileup = "seqviewer.cli:main"
+seqviewer-lengths = "seqviewer.cli:lengths_main"
 
 [build-system]
 requires = ["hatchling"]
