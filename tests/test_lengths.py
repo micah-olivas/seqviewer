@@ -4,7 +4,9 @@ Pure arithmetic and text, so none of this needs a terminal or a real run.
 """
 
 import gzip
+import os
 import re
+import time
 
 import pytest
 
@@ -731,13 +733,29 @@ def test_a_view_that_never_drew_prints_the_histogram_once(capsys):
     assert "9,000" in out                       # the tail, past the axis
 
 
-def test_the_live_frame_holds_the_histogram_and_the_figures():
+def test_the_settled_frame_holds_the_histogram_and_the_figures():
     view, _ = _live()
     counts = lengths.LengthCounts.from_lengths([800] * 50 + [90, 9000])
-    lines = view.frame(counts, "tail line")
+    lines = view.frame(counts, ["tail line"])
     text = "\n".join(lines)
     assert "bp" in text and "N50" in text and "52 reads" in text
     assert lines[-1] == "tail line"
+
+
+def test_a_trailing_string_is_taken_whole_not_per_letter():
+    view, _ = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 10)
+    assert view.frame(counts, "one line")[-1] == "one line"
+
+
+def test_a_live_frame_leaves_the_figures_out():
+    """They churn under the histogram while the scan runs."""
+    view, _ = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50 + [90, 9000])
+    live = "\n".join(view.frame(counts, ["bar"], stats=False))
+    assert "N50" not in live and "bases" not in live
+    assert "bp" in live                         # the histogram is still there
+    assert "N50" in "\n".join(view.frame(counts))
 
 
 def test_an_empty_frame_says_no_reads_once():
@@ -835,3 +853,357 @@ def test_the_hyphenated_command_still_names_itself(capsys):
     with pytest.raises(SystemExit):
         lengths_main(["--help"])
     assert "seqviewer-lengths" in capsys.readouterr().out
+
+
+def test_a_blank_separator_survives_the_tail(): 
+    """A blank line before the progress line, so it does not butt the last bar."""
+    view, _ = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 20)
+    lines = view.frame(counts, ["", "progress"], stats=False)
+    assert lines[-2:] == ["", "progress"]
+
+
+def test_a_missing_tail_line_is_left_out():
+    view, _ = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 20)
+    assert view.frame(counts, [None])[-1] != None
+    assert None not in view.frame(counts, [None])
+
+
+# --- Stopping a scan ------------------------------------------------------
+
+def test_a_scan_stops_when_asked(tmp_path):
+    """The tally then covers the blocks counted, not the whole file."""
+    path = _fastq(tmp_path / "a.fastq", [800] * 40000)
+    calls = []
+
+    def stop():
+        calls.append(1)
+        return len(calls) > 2                   # let two blocks through
+
+    original = lengths._BLOCK
+    try:
+        lengths._BLOCK = 8192
+        partial = lengths.count_lengths([path], stop=stop)
+        whole = lengths.count_lengths([path])
+    finally:
+        lengths._BLOCK = original
+
+    assert 0 < partial.total < whole.total
+    assert whole.total == 40000
+
+
+def test_stopping_leaves_the_remaining_files_unopened(tmp_path):
+    a = _fastq(tmp_path / "a.fastq", [800] * 20000)
+    b = _fastq(tmp_path / "b.fastq", [400] * 20000)
+    original = lengths._BLOCK
+    try:
+        lengths._BLOCK = 8192
+        counts = lengths.count_lengths([a, b], stop=lambda: True)
+    finally:
+        lengths._BLOCK = original
+    # Only the first file's reads, and none of the second file's 400s.
+    assert counts.total < 40000
+    assert all(length != 400 for length, _ in counts.items())
+
+
+def test_both_scanners_stop(tmp_path):
+    path = _fastq(tmp_path / "a.fastq", [800] * 20000)
+    original = lengths._BLOCK
+    try:
+        lengths._BLOCK = 8192
+        totals = {fast: lengths.count_lengths([path], stop=lambda: True,
+                                              fast=fast).total
+                  for fast in SCANNERS}
+    finally:
+        lengths._BLOCK = original
+    assert all(0 < t < 20000 for t in totals.values())
+
+
+def test_not_asking_to_stop_reads_everything(tmp_path):
+    path = _fastq(tmp_path / "a.fastq", [800] * 5000)
+    assert lengths.count_lengths([path], stop=lambda: False).total == 5000
+    assert lengths.count_lengths([path]).total == 5000
+
+
+def test_a_stopped_scan_says_what_the_figures_cover():
+    view, _ = _live()
+    view.bytes, view.total, view.reads = 77 << 20, 463 << 20, 175_545
+    view.stopped = True
+    note = _strip(view.note())
+    assert "stopped after" in note
+    assert "175,545 reads counted" in note
+    assert "463" in note                        # and of how much
+
+
+def test_a_finished_scan_reports_its_rate_instead():
+    view, _ = _live()
+    view.bytes, view.total, view.took = 2 << 30, 2 << 30, 4.0
+    note = _strip(view.note())
+    assert note.startswith("scanned") and "/s" in note
+
+
+# --- Watching for a keypress ---------------------------------------------
+
+def test_key_watching_needs_a_terminal():
+    from seqviewer.cli import KeyWatch
+
+    class Piped:
+        def isatty(self):
+            return False
+
+    watch = KeyWatch(stream=Piped())
+    assert not watch.armed
+    assert watch.pressed() is False
+    watch.close()
+
+
+def test_key_watching_can_be_turned_off():
+    from seqviewer.cli import KeyWatch
+
+    watch = KeyWatch(enabled=False)
+    assert not watch.armed
+    watch.close()
+
+
+def test_a_stream_that_only_looks_like_a_terminal_does_not_arm():
+    """isatty can lie; fileno then fails and the watch must stand down."""
+    from seqviewer.cli import KeyWatch
+
+    class Liar:
+        def isatty(self):
+            return True
+
+        def fileno(self):
+            raise OSError("not a real descriptor")
+
+    watch = KeyWatch(stream=Liar())
+    assert not watch.armed
+    assert watch.pressed() is False
+    watch.close()
+
+
+def test_the_terminal_is_put_back_as_it_was(tmp_path):
+    """Leaving cbreak mode set would break the shell the command returns to."""
+    import pty
+
+    from seqviewer.cli import KeyWatch, termios
+
+    if termios is None:
+        pytest.skip("no termios on this platform")
+    leader, follower = pty.openpty()
+    try:
+        stream = open(follower, "rb", buffering=0)
+
+        def line_mode():
+            """Whether the terminal buffers lines and echoes them.
+
+            Only these two flags are compared: the whole attribute list also
+            carries status bits the kernel sets on its own, such as PENDIN.
+            """
+            flags = termios.tcgetattr(follower)[3]
+            return bool(flags & termios.ICANON), bool(flags & termios.ECHO)
+
+        assert line_mode() == (True, True)
+        with KeyWatch(stream=stream) as watch:
+            assert watch.armed
+            assert line_mode() == (False, False)       # cbreak, so keys arrive
+        assert line_mode() == (True, True)             # and put back after
+        stream.close()
+    finally:
+        os.close(leader)
+
+
+def test_a_keypress_is_seen(tmp_path):
+    """What stops the scan: a byte waiting on the terminal."""
+    import pty
+
+    from seqviewer.cli import KeyWatch, termios
+
+    if termios is None:
+        pytest.skip("no termios on this platform")
+    leader, follower = pty.openpty()
+    try:
+        stream = open(follower, "rb", buffering=0)
+        with KeyWatch(stream=stream) as watch:
+            assert watch.armed
+            assert not watch.pressed()
+            os.write(leader, b"q")
+            time.sleep(0.05)
+            assert watch.pressed()
+            assert watch.pressed()              # and it stays pressed
+        stream.close()
+    finally:
+        os.close(leader)
+
+
+# --- Naming and opening the PNG ------------------------------------------
+
+def test_a_run_stem_drops_the_fastq_suffix():
+    from seqviewer.cli import _run_stem
+
+    assert _run_stem("6YB866_1_sample_1.fastq.gz") == "6YB866_1_sample_1"
+    assert _run_stem("/a/b/reads.fq") == "reads"
+    assert _run_stem("/a/b/reads/") == "reads"
+    assert _run_stem("plain_name") == "plain_name"
+
+
+def test_a_png_is_named_after_the_run_and_put_in_downloads():
+    from pathlib import Path
+
+    from seqviewer.cli import png_path
+
+    where = png_path("sample_1.fastq.gz")
+    assert where.name == "sample_1-lengths.png"
+    assert where.parent in (Path.home() / "Downloads", Path.cwd())
+
+
+def test_a_given_png_path_is_used_as_it_stands(tmp_path):
+    from seqviewer.cli import png_path
+
+    given = tmp_path / "somewhere" / "mine.png"
+    assert png_path("ignored.fastq", str(given)) == given
+
+
+def test_opening_reports_when_there_is_nothing_to_open(monkeypatch):
+    import seqviewer.cli as cli
+
+    monkeypatch.setattr(cli.sys, "platform", "sunos5")
+    assert cli.open_in_viewer("/tmp/whatever.png") is False
+
+
+def test_opening_reports_when_the_opener_is_absent(monkeypatch):
+    import seqviewer.cli as cli
+
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: None)
+    assert cli.open_in_viewer("/tmp/whatever.png") is False
+
+
+# --- Drawing the PNG -----------------------------------------------------
+
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def test_a_png_is_written(tmp_path):
+    pytest.importorskip("matplotlib")
+    from seqviewer import plot
+
+    counts = lengths.LengthCounts.from_lengths(
+        [780 + (i * 7) % 41 for i in range(500)] + [90, 9000])
+    binning = lengths.bin_counts(counts)
+    written = plot.write_png(tmp_path / "a.png", binning,
+                             lengths.summarise_counts(counts), title="a run")
+    assert written.read_bytes()[:8] == PNG_MAGIC
+    assert written.stat().st_size > 5_000        # a real figure, not a stub
+
+
+def test_the_png_directory_is_made_if_missing(tmp_path):
+    pytest.importorskip("matplotlib")
+    from seqviewer import plot
+
+    counts = lengths.LengthCounts.from_lengths([800] * 100)
+    target = tmp_path / "new" / "deeper" / "a.png"
+    plot.write_png(target, lengths.bin_counts(counts),
+                   lengths.summarise_counts(counts))
+    assert target.exists()
+
+
+def test_a_log_png_differs_from_a_linear_one(tmp_path):
+    pytest.importorskip("matplotlib")
+    from seqviewer import plot
+
+    counts = lengths.LengthCounts.from_lengths([800] * 5000 + [400] * 3)
+    binning = lengths.bin_counts(counts, bulk=100)
+    summary = lengths.summarise_counts(counts)
+    flat = plot.write_png(tmp_path / "flat.png", binning, summary)
+    tall = plot.write_png(tmp_path / "log.png", binning, summary, log=True)
+    assert flat.read_bytes() != tall.read_bytes()
+
+
+def test_the_caption_says_what_the_axis_leaves_out():
+    from seqviewer.plot import _bar_caption
+
+    counts = lengths.LengthCounts.from_lengths([800] * 1000 + [80, 9000])
+    binning = lengths.bin_counts(counts)
+    caption = _bar_caption(binning, lengths.summarise_counts(counts))
+    assert "1,002 reads" in caption
+    assert "9,000" in caption                    # the true maximum
+    assert "are not drawn" in caption
+    assert "shorter than" in caption and "longer than" in caption
+
+
+def test_the_caption_is_one_line_when_nothing_is_clipped():
+    from seqviewer.plot import _bar_caption
+
+    counts = lengths.LengthCounts.from_lengths([800] * 100)
+    binning = lengths.bin_counts(counts, bulk=100)
+    caption = _bar_caption(binning, lengths.summarise_counts(counts))
+    assert "\n" not in caption and "not drawn" not in caption
+
+
+def test_drawing_a_png_needs_no_import_at_module_level():
+    """Importing seqviewer must not pull matplotlib in."""
+    import ast
+    import pathlib
+
+    from seqviewer import plot
+
+    tree = ast.parse(pathlib.Path(plot.__file__).read_text())
+    top = set()
+    for node in tree.body:                       # module level only
+        if isinstance(node, ast.Import):
+            top.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            top.add(node.module.split(".")[0])
+    assert "matplotlib" not in top
+
+
+# --- The --png flag ------------------------------------------------------
+
+def test_png_writes_and_does_not_open_when_told_not_to(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 300 + [90, 9000])
+    target = tmp_path / "out.png"
+    assert lengths_main([str(tmp_path), "--width", "80", "--no-live",
+                         "--png", str(target), "--no-open"]) == 0
+    assert target.read_bytes()[:8] == PNG_MAGIC
+    assert str(target) in capsys.readouterr().out
+
+
+def test_png_is_not_drawn_without_the_flag(tmp_path, capsys):
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 50)
+    lengths_main([str(tmp_path), "--width", "80"])
+    assert "wrote" not in capsys.readouterr().out
+
+
+def test_a_missing_matplotlib_is_reported_not_raised(tmp_path, capsys,
+                                                    monkeypatch):
+    from seqviewer import plot
+    from seqviewer.cli import lengths_main
+
+    def unavailable(*args, **kwargs):
+        raise plot.PngUnavailable("drawing a PNG needs matplotlib")
+
+    monkeypatch.setattr(plot, "write_png", unavailable)
+    _fastq(tmp_path / "a.fastq", [800] * 50)
+    code = lengths_main([str(tmp_path), "--no-live", "--png",
+                         str(tmp_path / "x.png"), "--no-open"])
+    assert code == 1
+    assert "needs matplotlib" in capsys.readouterr().err
+
+
+def test_a_path_that_cannot_be_written_is_reported(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 50)
+    blocker = tmp_path / "blocked"
+    blocker.write_text("not a directory")
+    code = lengths_main([str(tmp_path), "--no-live", "--png",
+                         str(blocker / "x.png"), "--no-open"])
+    assert code == 1
+    assert "could not write" in capsys.readouterr().err

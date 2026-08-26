@@ -21,10 +21,13 @@ annot = ["biopython>=1.80"]
 # Everything the seqviewer-pileup command needs: it aligns reads and reads an
 # annotated reference, so it is align plus annot under one name.
 cli = ["pysam>=0.20", "biopython>=1.80"]
-dev = ["pytest>=7", "biopython>=1.80", "numpy>=1.20"]
+dev = ["pytest>=7", "biopython>=1.80", "numpy>=1.20", "matplotlib>=3.5"]
 # Scanning read lengths with array operations rather than a line at a
 # time. The figures reported are the same either way; the scan is faster.
 fast = ["numpy>=1.20"]
+# Drawing the read-length histogram to a PNG. Only seqviewer.plot needs this,
+# and only when --png is passed.
+plot = ["matplotlib>=3.5"]
 
 [project.scripts]
 # One command with subcommands, and each subcommand under its own name too.

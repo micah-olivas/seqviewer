@@ -382,11 +382,14 @@ def _length_blocks(stream) -> Iterator[List[int]]:
 def _tally_python(
     stream,
     on_block: Optional[Callable[[int, Counter], None]] = None,
+    stop: Optional[Callable[[], bool]] = None,
 ) -> Tuple[Counter, int]:
     """Return the record lengths in *stream* as a counter, and the read count.
 
     *on_block* is called after each block with the reads counted so far and the
     running tally, so a caller can report progress or draw what is in it.
+    *stop* is asked after each block whether to leave the rest of the file
+    unread; the tally returned then covers the blocks already counted.
     """
     tally: Counter = Counter()
     reads = 0
@@ -396,6 +399,8 @@ def _tally_python(
             reads += len(block)
         if on_block is not None:
             on_block(reads, tally)
+        if stop is not None and stop():
+            break
     return tally, reads
 
 
@@ -411,6 +416,7 @@ def _grow(tally, top: int):
 def _tally_numpy(
     stream,
     on_block: Optional[Callable[[int, "object"], None]] = None,
+    stop: Optional[Callable[[], bool]] = None,
 ):
     """Return the record lengths in *stream* as an array indexed by length.
 
@@ -418,6 +424,9 @@ def _tally_numpy(
     are the line lengths, which keeps the work per record inside the array layer.
     Blocks are trimmed and carried the same way as in :func:`_length_blocks`, and
     a final record whose fourth line is absent is dropped the same way.
+
+    *stop* is asked after each block whether to leave the rest of the file
+    unread, as in :func:`_tally_python`.
     """
     tally = _np.zeros(_TALLY_START, dtype=_np.int64)
     carry = b""
@@ -450,6 +459,8 @@ def _tally_numpy(
             carry = data[marks[whole - 1] + 1:]
         if on_block is not None:
             on_block(reads, tally)
+        if stop is not None and stop():
+            return tally, reads         # the carry belongs to an unread block
 
     if carry:
         marks = _np.flatnonzero(_np.frombuffer(carry, dtype=_np.uint8) == 10)
@@ -485,8 +496,9 @@ def read_lengths(paths: Iterable) -> Iterator[int]:
 
 def count_lengths(
     paths: Iterable,
-    progress: Optional[Callable[[int, int, int], None]] = None,
+    progress: Optional[Callable[[int, int, int, Callable], None]] = None,
     fast: Optional[bool] = None,
+    stop: Optional[Callable[[], bool]] = None,
 ) -> LengthCounts:
     """Tally the record lengths in *paths* in one pass.
 
@@ -503,6 +515,10 @@ def count_lengths(
 
     *fast* chooses the scanner: the array one where None and numpy is installed,
     and the pure-Python one where False.
+
+    *stop* is asked after each block whether to stop reading.  The tally then
+    covers the reads counted rather than the whole run, which the caller knows
+    because it is the one saying when to stop.
     """
     if fast is None:
         fast = HAVE_NUMPY
@@ -537,14 +553,16 @@ def count_lengths(
                 progress(_bytes + _handle.tell(), total, _reads + reads,
                          snapshot)
         try:
-            tally, reads = scan(stream, report)
+            tally, reads = scan(stream, report, stop)
         finally:
             if stream is not handle:
                 stream.close()
             handle.close()
         counts.merge(tally)
-        done_bytes += size
         done_reads += reads
+        if stop is not None and stop():
+            return counts               # leave the remaining files unopened
+        done_bytes += size
         if progress is not None:
             progress(done_bytes, total, done_reads, lambda: counts)
 

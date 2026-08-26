@@ -35,9 +35,17 @@ import itertools
 import os
 import random
 import shutil
+import subprocess
 import sys
 import textwrap
 import time
+
+try:                                    # a terminal to watch for a keypress
+    import select
+    import termios
+    import tty
+except ImportError:                     # pragma: no cover - no termios here
+    termios = None
 from pathlib import Path
 
 from . import lengths
@@ -640,6 +648,110 @@ class ScanProgress:
                 f"{_duration(self.took)} at {rate}/s")
 
 
+def _run_stem(label):
+    """Return a filename stem for the run *label*, without a FASTQ suffix."""
+    name = Path(label).name
+    if not name:                        # a path like "." or "reads/"
+        name = Path(label).resolve().name
+    for suffix in FASTQ_SUFFIXES:
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return name or "reads"
+
+
+def png_path(label, given=None):
+    """Where a PNG of the run *label* goes.
+
+    A path given on the command line is used as it stands.  Otherwise the file
+    is named after the run and put in the user's Downloads folder, which is
+    where a browser would put it, falling back to the working directory when
+    there is no such folder.
+    """
+    if given:
+        return Path(given).expanduser()
+    downloads = Path.home() / "Downloads"
+    folder = downloads if downloads.is_dir() else Path.cwd()
+    return folder / f"{_run_stem(label)}-lengths.png"
+
+
+def open_in_viewer(path):
+    """Ask the desktop to open *path*, and report whether it could be asked.
+
+    The command is not waited on, so a viewer that stays open does not hold the
+    terminal.
+    """
+    opener = {"darwin": "open", "linux": "xdg-open"}.get(
+        "linux" if sys.platform.startswith("linux") else sys.platform)
+    if opener is None or shutil.which(opener) is None:
+        return False
+    try:
+        subprocess.Popen([opener, str(path)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False
+    return True
+
+
+class KeyWatch:
+    """Watches the terminal for a keypress, so a scan can be stopped early.
+
+    The terminal is put in cbreak mode, which makes a single key readable
+    without waiting for a newline, and is put back as it was on the way out.
+    Interrupts are left enabled, so Ctrl-C still raises.
+
+    Where there is no terminal to read, ``armed`` stays False and the display
+    offers nothing it cannot do.
+    """
+
+    def __init__(self, stream=None, enabled=True):
+        self.stream = stream if stream is not None else sys.stdin
+        self.hit = False
+        self.armed = False
+        self._fd = None
+        self._saved = None
+        if not (enabled and termios is not None):
+            return
+        try:
+            if not self.stream.isatty():
+                return
+            self._fd = self.stream.fileno()
+            self._saved = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd)
+            self.armed = True
+        except Exception:               # a stream that only looks like a tty
+            self._saved = None
+            self.armed = False
+
+    def pressed(self):
+        """Whether a key has been struck.  Cheap enough to ask once a block."""
+        if self.hit or not self.armed:
+            return self.hit
+        try:
+            ready, _, _ = select.select([self.stream], [], [], 0)
+            if ready:
+                os.read(self._fd, 4096)     # drop whatever was typed
+                self.hit = True
+        except Exception:
+            self.armed = False
+        return self.hit
+
+    def close(self):
+        """Put the terminal back the way it was found."""
+        if self._saved is not None:
+            try:
+                termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
+            except Exception:
+                pass
+            self._saved = None
+        self.armed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
 class LiveView:
     """The histogram, redrawn in place while the run is scanned.
 
@@ -666,13 +778,16 @@ class LiveView:
         self.last = 0.0
         self.took = 0.0
         self.bytes = 0
+        self.total = 0
         self.reads = 0
         self.height = 0
         self.drew = False
+        self.stopped = False
+        self.hint = None
 
     def update(self, done, total, reads, snapshot=None):
         """Record progress, and redraw the histogram if a frame is due."""
-        self.bytes, self.reads = done, reads
+        self.bytes, self.reads, self.total = done, reads, total
         self.took = time.monotonic() - self.started
         if not (self.enabled and snapshot) or total < PROGRESS_AFTER_BYTES:
             return
@@ -683,25 +798,35 @@ class LiveView:
         share = min(1.0, done / total) if total else 1.0
         rate = done / self.took if self.took >= RATE_AFTER else 0.0
         left = (total - done) / rate if rate else 0.0
-        self.draw(self.frame(snapshot(),
-                             _progress_line(share, reads, rate, left,
-                                            self.width, self.palette)))
+        tail = ["", _progress_line(share, reads, rate, left, self.width,
+                                   self.palette)]
+        if self.hint:
+            tail.append(self.hint)
+        self.draw(self.frame(snapshot(), tail, stats=False))
 
-    def frame(self, counts, last_line=None):
-        """Return the lines of one frame: the histogram, then the figures."""
+    def frame(self, counts, tail=(), stats=True):
+        """Return the lines of one frame.
+
+        The figures are left off while the scan runs, because they churn under
+        the histogram without telling the reader anything the bars do not; they
+        are added once the distribution has settled.
+        """
+        if isinstance(tail, str):
+            tail = [tail]               # a bare string would go in per letter
         if counts.empty:
             lines = ["", "no reads"]
         else:
             binning = lengths.bin_counts(counts, self.bins, self.bulk)
-            summary = lengths.summarise_counts(counts)
             lines = [""]
             lines += lengths.histogram(binning, self.width, self.log,
                                        self.palette)
-            lines.append("")
-            for text in lengths.summary_lines(summary, binning):
-                lines += textwrap.fill(text, self.width).split("\n")
-        if last_line:
-            lines.append(last_line)
+            if stats:
+                summary = lengths.summarise_counts(counts)
+                lines.append("")
+                for text in lengths.summary_lines(summary, binning):
+                    lines += textwrap.fill(text, self.width).split("\n")
+        # None means there is no such line; "" is a blank one, and kept.
+        lines += [line for line in tail if line is not None]
         return lines
 
     def draw(self, lines, final=False):
@@ -731,19 +856,28 @@ class LiveView:
         self.drew = True
 
     def note(self):
-        """Return how much was scanned and how fast, or None if it was quick."""
-        if self.took < SCAN_NOTE_AFTER or not self.bytes:
+        """Return a closing line about the scan, or None if there is nothing.
+
+        A scan that was stopped says so, and says what the figures cover, since
+        they then describe the reads counted rather than the whole run.
+        """
+        if self.stopped:
+            of_total = (f" of {_si_bytes(self.total)}" if self.total else "")
+            text = (f"stopped after {_si_bytes(self.bytes)}{of_total}; the "
+                    f"figures cover the {self.reads:,} reads counted")
+        elif self.took < SCAN_NOTE_AFTER or not self.bytes:
             return None
-        rate = _si_bytes(int(self.bytes / self.took))
-        text = (f"scanned {_si_bytes(self.bytes)} in {_duration(self.took)} "
-                f"at {rate}/s")
+        else:
+            rate = _si_bytes(int(self.bytes / self.took))
+            text = (f"scanned {_si_bytes(self.bytes)} in "
+                    f"{_duration(self.took)} at {rate}/s")
         if self.palette:
             return f"{self.palette.tail}{text}{self.palette.reset}"
         return text
 
     def finish(self, counts):
         """Write the settled histogram, over the last frame or on its own."""
-        lines = self.frame(counts, self.note())
+        lines = self.frame(counts, [self.note()])
         if self.drew:
             self.draw(lines, final=True)
         else:
@@ -789,6 +923,13 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
     parser.add_argument("--no-live", action="store_true",
                         help="draw the histogram once the scan finishes rather "
                              "than filling it in as reads are counted")
+    parser.add_argument("--png", nargs="?", const="", metavar="PATH",
+                        help="also draw the histogram to a PNG and open it. "
+                             "Without a path it is named after the run and put "
+                             "in ~/Downloads. Needs the plot extra, which adds "
+                             "matplotlib")
+    parser.add_argument("--no-open", action="store_true",
+                        help="write the PNG without opening it")
     parser.add_argument("--slow", action="store_true",
                         help="scan without numpy, which is slower on a large "
                              "file and reports the same figures")
@@ -829,12 +970,61 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
             view.update(done, total, reads, snapshot)
             bar.update(done, total, reads)
 
-        counts = lengths.count_lengths(group, progress=report,
-                                       fast=False if args.slow else None)
+        with KeyWatch(enabled=view.enabled) as keys:
+            if keys.armed:
+                view.hint = dim("press any key to stop")
+            try:
+                counts = lengths.count_lengths(
+                    group, progress=report, stop=keys.pressed,
+                    fast=False if args.slow else None)
+            except KeyboardInterrupt:
+                bar.clear()
+                keys.close()            # before anything else is printed
+                print()
+                return 130
+            view.stopped = keys.hit
+
         bar.clear()
         view.took = view.took or bar.took
         view.bytes = view.bytes or bar.bytes
         view.finish(counts)
+
+        if args.png is not None and not counts.empty:
+            status = write_png(counts, args, label, dim)
+            if status:
+                return status
+    return 0
+
+
+def write_png(counts, args, label, dim):
+    """Draw the tally to a PNG and open it.  Returns an exit status, or 0.
+
+    The binning is recomputed rather than carried out of the live view, so the
+    figure is drawn from the same tally and the same flags as the histogram just
+    printed.
+    """
+    try:
+        from . import plot
+    except ImportError as exc:          # pragma: no cover - a broken install
+        print(f"could not draw a PNG: {exc}", file=sys.stderr)
+        return 1
+
+    binning = lengths.bin_counts(counts, args.bins, args.bulk)
+    summary = lengths.summarise_counts(counts)
+    destination = png_path(label, args.png)
+    try:
+        written = plot.write_png(destination, binning, summary,
+                                 title=_run_stem(label), log=args.log)
+    except plot.PngUnavailable as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"could not write {destination}: {exc}", file=sys.stderr)
+        return 1
+
+    print(dim(f"wrote {written}"))
+    if not args.no_open and not open_in_viewer(written):
+        print(dim("nothing here opens a PNG; the file is written"))
     return 0
 
 

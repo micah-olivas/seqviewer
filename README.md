@@ -238,14 +238,37 @@ Where stdout is a terminal and the window has room, the histogram appears
 straight away and fills in as the run is counted, four redraws a second, with a
 progress line under it. Watch the axis shift while it fills: the percentiles that
 place it are recomputed from whatever has been counted, so it only settles on the
-last block. Redrawing is cheap, because a frame reduces the tally rather than
-rereading the file. `--no-live` waits and draws once instead.
+last block. The figures — median, N50 and the rest — are held back until it does,
+since they churn under the bars without saying anything the bars do not.
+Redrawing is cheap, because a frame reduces the tally rather than rereading the
+file.
+
+Any key stops the scan. The histogram is then drawn from the reads counted so far
+and says so, because its figures describe part of the run rather than all of it —
+useful for reading the shape of a large file without waiting for the tail of it.
+`--no-live` waits and draws once instead.
 
 Piping or redirecting changes that. Nothing goes out until the scan finishes, and
 then the histogram is written once, so a captured file never holds a half-filled
 frame. Progress moves to stderr for runs of at least 32 MiB, leaving stdout to
 itself; `--no-progress` silences it. Colour is used when stdout is a terminal and
 `NO_COLOR` is unset; `--no-color` turns it off.
+
+### As a figure
+
+`--png` draws the same binning to a PNG and opens it. Given no path, the file
+takes the run's name and lands in `~/Downloads`:
+
+```bash
+seqview lengths reads/ --png
+```
+
+The figure is drawn from the same tally, axis and flags as the histogram just
+printed, so the two agree, and its caption names the reads the axis leaves out so
+that it is not read as the whole distribution. `--log` applies to it as well, and
+`--no-open` writes the file without opening it. This needs the `plot` extra, which
+adds matplotlib; `seqviewer.plot` imports it inside the drawing function, so
+nothing else in the package depends on it.
 
 ### Gzipped input
 
