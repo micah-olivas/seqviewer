@@ -47,6 +47,7 @@ except ImportError:                     # pragma: no cover - numpy is usual
 #: and on nothing it reports.
 HAVE_NUMPY = _np is not None
 
+
 __all__ = [
     "Bin",
     "Binning",
@@ -326,6 +327,10 @@ def _open_pair(path):
 
     The handle is returned alongside the stream so a caller tracking progress
     can read a position from the file even when the stream decompresses.
+
+    ``GzipFile`` is given the handle rather than the path, which skips the
+    buffered reader :func:`gzip.open` wraps a path in.  Blocks are already read
+    a few megabytes at a time, so that layer only copies them again.
     """
     handle = open(path, "rb")
     if str(path).endswith(".gz"):
@@ -376,9 +381,13 @@ def _length_blocks(stream) -> Iterator[List[int]]:
 
 def _tally_python(
     stream,
-    on_block: Optional[Callable[[int], None]] = None,
+    on_block: Optional[Callable[[int, Counter], None]] = None,
 ) -> Tuple[Counter, int]:
-    """Return the record lengths in *stream* as a counter, and the read count."""
+    """Return the record lengths in *stream* as a counter, and the read count.
+
+    *on_block* is called after each block with the reads counted so far and the
+    running tally, so a caller can report progress or draw what is in it.
+    """
     tally: Counter = Counter()
     reads = 0
     for block in _length_blocks(stream):
@@ -386,7 +395,7 @@ def _tally_python(
             tally.update(block)         # counted in C, one call per block
             reads += len(block)
         if on_block is not None:
-            on_block(reads)
+            on_block(reads, tally)
     return tally, reads
 
 
@@ -401,7 +410,7 @@ def _grow(tally, top: int):
 
 def _tally_numpy(
     stream,
-    on_block: Optional[Callable[[int], None]] = None,
+    on_block: Optional[Callable[[int, "object"], None]] = None,
 ):
     """Return the record lengths in *stream* as an array indexed by length.
 
@@ -440,7 +449,7 @@ def _tally_numpy(
                 reads += int(seqs.size)
             carry = data[marks[whole - 1] + 1:]
         if on_block is not None:
-            on_block(reads)
+            on_block(reads, tally)
 
     if carry:
         marks = _np.flatnonzero(_np.frombuffer(carry, dtype=_np.uint8) == 10)
@@ -484,10 +493,13 @@ def count_lengths(
     Nothing is held but the tally, so the cost in memory follows the run's
     length range rather than its size on disk.
 
-    *progress* is called with the bytes read, the bytes to read and the reads
-    counted so far, after each block and once at the end of each file.  For a
-    gzipped file the figures are compressed bytes, which is what the file's size
-    reports.
+    *progress* is called after each block and once at the end of each file, with
+    the bytes read, the bytes to read, the reads counted so far, and a callable
+    returning a :class:`LengthCounts` of everything seen up to that point.  For
+    a gzipped file the byte figures are compressed bytes, which is what the
+    file's size reports.  The snapshot is built only when the callable is used,
+    so a caller that reports progress without drawing the distribution does not
+    pay for one.
 
     *fast* chooses the scanner: the array one where None and numpy is installed,
     and the pure-Python one where False.
@@ -515,9 +527,15 @@ def count_lengths(
         handle, stream = _open_pair(path)
         report = None
         if progress is not None:
-            def report(reads, _handle=handle, _bytes=done_bytes,
+            def report(reads, tally, _handle=handle, _bytes=done_bytes,
                        _reads=done_reads):
-                progress(_bytes + _handle.tell(), total, _reads + reads)
+                def snapshot():
+                    live = LengthCounts()
+                    live.merge(counts._counts)      # the files already read
+                    live.merge(tally)               # and this one so far
+                    return live
+                progress(_bytes + _handle.tell(), total, _reads + reads,
+                         snapshot)
         try:
             tally, reads = scan(stream, report)
         finally:
@@ -528,7 +546,7 @@ def count_lengths(
         done_bytes += size
         done_reads += reads
         if progress is not None:
-            progress(done_bytes, total, done_reads)
+            progress(done_bytes, total, done_reads, lambda: counts)
 
     return counts
 

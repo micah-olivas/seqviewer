@@ -611,3 +611,227 @@ def test_no_progress_is_accepted(tmp_path, capsys):
 
     _fastq(tmp_path / "a.fastq", [800] * 20)
     assert lengths_main([str(tmp_path), "--no-progress"]) == 0
+
+
+# --- The live histogram ---------------------------------------------------
+
+def _live(width=80, bins=6, rows=40, **kw):
+    from seqviewer.cli import LiveView
+
+    term = _Terminal()
+    view = LiveView(width, bins, lengths.DEFAULT_BULK, False,
+                    stream=term, rows=rows, **kw)
+    return view, term
+
+
+def test_the_live_view_needs_a_terminal():
+    from seqviewer.cli import LiveView
+
+    class Piped(_Terminal):
+        def isatty(self):
+            return False
+
+    view = LiveView(80, 6, 99.0, False, stream=Piped(), rows=40)
+    assert not view.enabled
+
+
+def test_the_live_view_needs_a_window_tall_enough_for_the_frame():
+    """Redrawing a frame taller than the window would scroll it apart."""
+    tall, _ = _live(bins=40, rows=20)
+    short, _ = _live(bins=6, rows=20)
+    assert not tall.enabled
+    assert short.enabled
+
+
+def test_the_live_view_stays_quiet_on_a_small_run():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 100)
+    view.update(1 << 10, PROGRESS_AFTER_BYTES - 1, 100, lambda: counts)
+    assert term.text == ""
+
+
+def test_the_live_view_draws_the_distribution_so_far():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50 + [400] * 10)
+    view.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 4, 60,
+                lambda: counts)
+    drawn = _strip(term.text)
+    assert "bp" in drawn and "reads" in drawn
+    assert "60 reads" in drawn                  # the figures so far
+    assert "25%" in drawn                       # and the progress line
+    assert "█" in drawn
+
+
+def test_a_redraw_moves_the_cursor_back_over_the_last_frame():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES, LIVE_INTERVAL
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    view.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 4, 50,
+                lambda: counts)
+    height = view.height
+    assert height > 1
+    term.chunks.clear()
+    view.last -= LIVE_INTERVAL * 2              # let the next frame be due
+    view.update(PROGRESS_AFTER_BYTES * 2, PROGRESS_AFTER_BYTES * 4, 90,
+                lambda: counts)
+    assert term.text.startswith(f"\x1b[{height}A")
+
+
+def test_every_redrawn_line_is_erased_first():
+    """A shorter line must not leave the end of the last one behind."""
+    from seqviewer.cli import PROGRESS_AFTER_BYTES
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    view.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 2, 50,
+                lambda: counts)
+    body = term.text.split("A", 1)[-1]
+    assert body.count("\x1b[2K") == view.height
+
+
+def test_the_final_frame_leaves_the_cursor_below_the_histogram():
+    """Otherwise the next group, or the shell prompt, prints into it."""
+    from seqviewer.cli import PROGRESS_AFTER_BYTES
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50 + [90, 9000])
+    view.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 2, 52,
+                lambda: counts)
+    term.chunks.clear()
+    view.finish(counts)
+    assert not re.search(r"\x1b\[\d+A$", term.text)
+    assert term.text.endswith("\n")
+
+
+def test_the_final_frame_drops_the_progress_line():
+    from seqviewer.cli import PROGRESS_AFTER_BYTES
+
+    view, term = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    view.update(PROGRESS_AFTER_BYTES, PROGRESS_AFTER_BYTES * 2, 50,
+                lambda: counts)
+    term.chunks.clear()
+    view.finish(counts)
+    assert "%" not in _strip(term.text)
+
+
+def test_a_view_that_never_drew_prints_the_histogram_once(capsys):
+    """The path a pipe takes: one write, and no partial frames in it."""
+    view, _ = _live(enabled=False)
+    counts = lengths.LengthCounts.from_lengths([800] * 50 + [90, 9000])
+    view.finish(counts)
+    out = capsys.readouterr().out
+    assert "\x1b[" not in out
+    assert out.count("N50") == 1                # the frame, written once
+    assert "9,000" in out                       # the tail, past the axis
+
+
+def test_the_live_frame_holds_the_histogram_and_the_figures():
+    view, _ = _live()
+    counts = lengths.LengthCounts.from_lengths([800] * 50 + [90, 9000])
+    lines = view.frame(counts, "tail line")
+    text = "\n".join(lines)
+    assert "bp" in text and "N50" in text and "52 reads" in text
+    assert lines[-1] == "tail line"
+
+
+def test_an_empty_frame_says_no_reads_once():
+    view, _ = _live()
+    assert view.frame(lengths.LengthCounts()) == ["", "no reads"]
+
+
+def test_the_live_view_is_off_when_asked(tmp_path, capsys):
+    from seqviewer.cli import lengths_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 30)
+    assert lengths_main([str(tmp_path), "--no-live"]) == 0
+    assert "\x1b[" not in capsys.readouterr().out
+
+
+def test_the_snapshot_grows_as_the_scan_proceeds(tmp_path):
+    """What the live view draws from: each callback sees more than the last."""
+    path = _fastq(tmp_path / "a.fastq", [500 + i % 200 for i in range(20000)])
+    seen = []
+
+    def progress(done, total, reads, snapshot=None):
+        if snapshot is not None:
+            seen.append(snapshot().total)
+
+    original = lengths._BLOCK
+    try:
+        lengths._BLOCK = 4096                   # many blocks from a small file
+        counts = lengths.count_lengths([path], progress=progress)
+    finally:
+        lengths._BLOCK = original
+
+    assert len(seen) > 3
+    assert seen == sorted(seen)                 # never goes backwards
+    assert seen[-1] == counts.total == 20000
+
+
+# --- The seqview dispatcher -----------------------------------------------
+
+def test_seqview_lists_its_commands(capsys):
+    from seqviewer.cli import seqview_main
+
+    assert seqview_main(["--help"]) == 0
+    out = capsys.readouterr().out
+    assert "pileup" in out and "lengths" in out
+
+
+def test_seqview_with_no_command_explains_itself(capsys):
+    """Usage goes to stderr with a non-zero status, as a misuse."""
+    from seqviewer.cli import seqview_main
+
+    assert seqview_main([]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "usage: seqview" in captured.err
+
+
+def test_seqview_rejects_an_unknown_command(capsys):
+    from seqviewer.cli import seqview_main
+
+    assert seqview_main(["pileip"]) == 2
+    assert "unknown command 'pileip'" in capsys.readouterr().err
+
+
+def test_seqview_lengths_runs_the_lengths_command(tmp_path, capsys):
+    from seqviewer.cli import seqview_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 40 + [90, 5000])
+    assert seqview_main(["lengths", str(tmp_path), "--width", "80"]) == 0
+    out = capsys.readouterr().out
+    assert "42 reads" in out and "█" in out
+
+
+def test_seqview_lengths_and_the_hyphenated_command_agree(tmp_path, capsys):
+    from seqviewer.cli import lengths_main, seqview_main
+
+    _fastq(tmp_path / "a.fastq", [800] * 40 + [90, 5000])
+    seqview_main(["lengths", str(tmp_path), "--width", "80"])
+    through_seqview = capsys.readouterr().out
+    lengths_main([str(tmp_path), "--width", "80"])
+    assert capsys.readouterr().out == through_seqview
+
+
+def test_a_subcommand_names_itself_in_its_usage(capsys):
+    from seqviewer.cli import seqview_main
+
+    with pytest.raises(SystemExit):
+        seqview_main(["lengths", "--help"])
+    assert "seqview lengths" in capsys.readouterr().out
+
+
+def test_the_hyphenated_command_still_names_itself(capsys):
+    """Scripts calling the old name should see the old name in errors."""
+    from seqviewer.cli import lengths_main
+
+    with pytest.raises(SystemExit):
+        lengths_main(["--help"])
+    assert "seqviewer-lengths" in capsys.readouterr().out

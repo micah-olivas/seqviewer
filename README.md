@@ -116,11 +116,11 @@ without a page.
 
 ## Command line
 
-`seqviewer-pileup` aligns reads to a reference and writes a page. It takes a
+`seqview pileup` aligns reads to a reference and writes a page. It takes a
 directory of FASTQs, which is how a sequencing run arrives:
 
 ```bash
-uv run --extra cli seqviewer-pileup reads/ reference.dna pileup.html
+uv run --extra cli seqview pileup reads/ reference.dna pileup.html
 ```
 
 The directory's files are pooled into one pileup; `--per-file` draws a group per
@@ -131,14 +131,14 @@ GenBank, ApE, or SnapGene.
 `--extra cli` covers what the command needs beyond the core: pysam to read the
 alignment and biopython to read an annotated reference. `minimap2` and
 `samtools` still have to be on PATH. Without uv, run the same thing as
-`python -m seqviewer.cli`.
+`python -m seqviewer.cli pileup`.
 
 That form has to be run from a checkout. To get the command on PATH and run it
 from wherever the reads are:
 
 ```bash
 uv tool install --python 3.13 'seqviewer[cli] @ git+https://github.com/micah-olivas/seqviewer'
-seqviewer-pileup reads/ reference.dna pileup.html      # from anywhere
+seqview pileup reads/ reference.dna pileup.html        # from anywhere
 ```
 
 Pass `--editable '/path/to/seqviewer[cli]'` instead to track a local checkout, so
@@ -172,14 +172,19 @@ definition of that number, and both pages read it.
 
 ## Read lengths
 
-`seqviewer-lengths` reads the length of every record in a run and draws the
+`seqview lengths` reads the length of every record in a run and draws the
 distribution as a histogram in the terminal. It does no alignment, so it needs
 neither the `cli` extra nor `minimap2` on PATH. The `fast` extra adds numpy,
 which about halves the time to scan a large file.
 
 ```bash
-seqviewer-lengths reads/
+seqview lengths reads/
 ```
+
+`seqview` dispatches to the two commands, `pileup` and `lengths`, and each is
+installed under its own name as well — `seqviewer-pileup` and
+`seqviewer-lengths` — taking the same arguments either way. `seqview` on its own
+lists them.
 
 The axis covers the central 99% of reads rather than the full range, because a
 few concatemers otherwise reach the top of it on their own. For a product
@@ -227,10 +232,30 @@ Peak memory is what the tally buys: at 0.50 GiB the list needs 62 MB and at
 `scripts/bench_lengths.py` produces this table. A first read from disk is bound
 by the disk rather than by the scanner, so run it twice to compare scanners.
 
-Progress is reported on stderr while scanning a run of at least 32 MiB, which
-leaves the histogram on stdout redirectable on its own; `--no-progress` turns it
-off. Colour is used when stdout is a terminal and `NO_COLOR` is unset;
-`--no-color` turns it off.
+### While the scan runs
+
+Where stdout is a terminal and the window has room, the histogram appears
+straight away and fills in as the run is counted, four redraws a second, with a
+progress line under it. Watch the axis shift while it fills: the percentiles that
+place it are recomputed from whatever has been counted, so it only settles on the
+last block. Redrawing is cheap, because a frame reduces the tally rather than
+rereading the file. `--no-live` waits and draws once instead.
+
+Piping or redirecting changes that. Nothing goes out until the scan finishes, and
+then the histogram is written once, so a captured file never holds a half-filled
+frame. Progress moves to stderr for runs of at least 32 MiB, leaving stdout to
+itself; `--no-progress` silences it. Colour is used when stdout is a terminal and
+`NO_COLOR` is unset; `--no-color` turns it off.
+
+### Gzipped input
+
+A `.gz` is bounded by inflating it, not by the scan: reading its compressed bytes
+costs almost nothing, and zlib takes roughly as long to inflate a block as the
+array scanner takes to count it. Two ways around that were measured and neither
+helped on an M3 Pro — ISA-L through `python-isal` inflated at about a tenth of
+zlib's rate, and piping from `gzip -dc` to overlap inflating with counting lost
+to the cost of the pipe. Expect a gzipped run to scan at a fraction of the rate
+of the same reads uncompressed.
 
 ## Reference and Feature
 

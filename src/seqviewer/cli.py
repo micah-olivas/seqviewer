@@ -296,13 +296,14 @@ def focus_flanks(reference, label):
     return None
 
 
-def build_parser():
+def build_parser(prog=None):
     """The command line, as a parser.
 
     Separated from :func:`main` so the flags and their defaults can be
-    tested without running an alignment.
+    tested without running an alignment.  *prog* names the command in usage
+    text, which differs between ``seqviewer-pileup`` and ``seqview pileup``.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("reads",
                         help="a directory of FASTQs, pooled into one pileup, or "
                              "a single FASTQ; .gz is read directly")
@@ -378,8 +379,8 @@ def build_parser():
     return parser
 
 
-def main(argv=None):
-    parser = build_parser()
+def main(argv=None, prog=None):
+    parser = build_parser(prog)
     args = parser.parse_args(argv)
 
     log_lines = []
@@ -541,6 +542,35 @@ def _duration(seconds):
     return f"{seconds // 60}m{seconds % 60:02d}s"
 
 
+#: Seconds between redraws of the live histogram.  Slower than the progress
+#: line, because each frame reduces the whole tally to an axis.
+LIVE_INTERVAL = 0.25
+
+#: Rows a live histogram needs beyond its bins: a leading blank, the axis
+#: header, two tail rows, a blank, three lines of figures and a progress line.
+LIVE_EXTRA_ROWS = 9
+
+
+def _progress_line(share, reads, rate, left, width, palette=None):
+    """Return one line reporting how far a scan has got, at most *width* wide.
+
+    The bar is dropped where the figures alone fill the width, since the figures
+    are what the reader needs.
+    """
+    text = f"{share * 100:3.0f}%  {_si_reads(reads)} reads"
+    if rate:
+        text += f"  {_si_bytes(int(rate))}/s  {_duration(left)} left"
+    room = width - len(text) - 4
+    if room < 12:
+        return text[:width]
+    fill = int(round(room * share))
+    done, todo = "█" * fill, "░" * (room - fill)
+    if palette:
+        done = f"{palette.bar}{done}{palette.reset}"
+        todo = f"{palette.tail}{todo}{palette.reset}"
+    return f"{done}{todo}  {text}"
+
+
 class ScanProgress:
     """One rewritten line reporting the progress of a scan, on stderr.
 
@@ -565,7 +595,19 @@ class ScanProgress:
         self.bytes = 0
         self.reads = 0
 
-    def update(self, done, total, reads):
+    def figures(self, done, total):
+        """Return the share done, and the rate and time left once measurable.
+
+        Under :data:`RATE_AFTER` the elapsed time is too short to divide by, and
+        the rate it gives is wrong by orders of magnitude, so it is left out.
+        """
+        share = min(1.0, done / total) if total else 1.0
+        if self.took < RATE_AFTER:
+            return share, 0.0, 0.0
+        rate = done / self.took
+        return share, rate, (total - done) / rate if rate else 0.0
+
+    def update(self, done, total, reads, snapshot=None):
         """Record progress, and redraw the line if it is due."""
         self.bytes, self.reads = done, reads
         self.took = time.monotonic() - self.started
@@ -575,26 +617,9 @@ class ScanProgress:
         if done < total and now - self.last < PROGRESS_INTERVAL:
             return
         self.last = now
-        share = min(1.0, done / total) if total else 1.0
-        text = f"{share * 100:3.0f}%  {_si_reads(reads)} reads"
-        if self.took >= RATE_AFTER:
-            # Below this the elapsed time is too short to divide by, and the
-            # rate it gives is off by orders of magnitude.
-            rate = done / self.took
-            left = (total - done) / rate if rate else 0.0
-            text += f"  {_si_bytes(int(rate))}/s  {_duration(left)} left"
-        room = self.width - len(text) - 4
-        if room >= 12:
-            fill = int(round(room * share))
-            done_cells, todo_cells = "█" * fill, "░" * (room - fill)
-            if self.palette:
-                bar = (f"{self.palette.bar}{done_cells}{self.palette.reset}"
-                       f"{self.palette.tail}{todo_cells}{self.palette.reset}")
-            else:
-                bar = done_cells + todo_cells
-            line = f"{bar}  {text}"
-        else:
-            line = text[:self.width]
+        share, rate, left = self.figures(done, total)
+        line = _progress_line(share, reads, rate, left, self.width,
+                              self.palette)
         self.stream.write("\r\x1b[2K" + line)
         self.stream.flush()
         self.drawn = True
@@ -615,10 +640,121 @@ class ScanProgress:
                 f"{_duration(self.took)} at {rate}/s")
 
 
-def lengths_main(argv=None):
+class LiveView:
+    """The histogram, redrawn in place while the run is scanned.
+
+    Used only where stdout is a terminal and the frame fits the window, since
+    redrawing moves the cursor back over rows that must still be on screen.  A
+    caller that is not drawing gets one write at the end instead.
+
+    The axis is recomputed for each frame, so it moves until the last block is
+    counted.  Frames are drawn at :data:`LIVE_INTERVAL` rather than once per
+    block, since each one reduces the whole tally to an axis.
+    """
+
+    def __init__(self, width, bins, bulk, log, palette=None, rows=24,
+                 enabled=True, stream=None):
+        self.width = width
+        self.bins = bins
+        self.bulk = bulk
+        self.log = log
+        self.palette = palette
+        self.stream = stream if stream is not None else sys.stdout
+        self.enabled = (enabled and self.stream.isatty()
+                        and rows > bins + LIVE_EXTRA_ROWS)
+        self.started = time.monotonic()
+        self.last = 0.0
+        self.took = 0.0
+        self.bytes = 0
+        self.reads = 0
+        self.height = 0
+        self.drew = False
+
+    def update(self, done, total, reads, snapshot=None):
+        """Record progress, and redraw the histogram if a frame is due."""
+        self.bytes, self.reads = done, reads
+        self.took = time.monotonic() - self.started
+        if not (self.enabled and snapshot) or total < PROGRESS_AFTER_BYTES:
+            return
+        now = time.monotonic()
+        if now - self.last < LIVE_INTERVAL:
+            return
+        self.last = now
+        share = min(1.0, done / total) if total else 1.0
+        rate = done / self.took if self.took >= RATE_AFTER else 0.0
+        left = (total - done) / rate if rate else 0.0
+        self.draw(self.frame(snapshot(),
+                             _progress_line(share, reads, rate, left,
+                                            self.width, self.palette)))
+
+    def frame(self, counts, last_line=None):
+        """Return the lines of one frame: the histogram, then the figures."""
+        if counts.empty:
+            lines = ["", "no reads"]
+        else:
+            binning = lengths.bin_counts(counts, self.bins, self.bulk)
+            summary = lengths.summarise_counts(counts)
+            lines = [""]
+            lines += lengths.histogram(binning, self.width, self.log,
+                                       self.palette)
+            lines.append("")
+            for text in lengths.summary_lines(summary, binning):
+                lines += textwrap.fill(text, self.width).split("\n")
+        if last_line:
+            lines.append(last_line)
+        return lines
+
+    def draw(self, lines, final=False):
+        """Write *lines* over the frame already on screen.
+
+        Each line is erased before it is written, so a shorter line does not
+        leave the end of the last one behind, and a frame with fewer rows than
+        the one before erases the rows it no longer fills.
+
+        The cursor is left at the top of where the next frame goes, which is the
+        row after the last line written.  On the *final* frame it is left below
+        every row instead, so that whatever prints next -- another group, or the
+        shell prompt -- does not land inside the histogram.
+        """
+        out = []
+        if self.height:
+            out.append(f"\x1b[{self.height}A")
+        out += [f"\x1b[2K{line}\n" for line in lines]
+        spare = max(0, self.height - len(lines))
+        if spare:
+            out += ["\x1b[2K\n"] * spare
+            if not final:
+                out.append(f"\x1b[{spare}A")
+        self.stream.write("".join(out))
+        self.stream.flush()
+        self.height = len(lines)
+        self.drew = True
+
+    def note(self):
+        """Return how much was scanned and how fast, or None if it was quick."""
+        if self.took < SCAN_NOTE_AFTER or not self.bytes:
+            return None
+        rate = _si_bytes(int(self.bytes / self.took))
+        text = (f"scanned {_si_bytes(self.bytes)} in {_duration(self.took)} "
+                f"at {rate}/s")
+        if self.palette:
+            return f"{self.palette.tail}{text}{self.palette.reset}"
+        return text
+
+    def finish(self, counts):
+        """Write the settled histogram, over the last frame or on its own."""
+        lines = self.frame(counts, self.note())
+        if self.drew:
+            self.draw(lines, final=True)
+        else:
+            for line in lines:
+                print(line)
+
+
+def lengths_main(argv=None, prog="seqviewer-lengths"):
     """Print a read-length histogram for a directory of FASTQs, or one file."""
     parser = argparse.ArgumentParser(
-        prog="seqviewer-lengths",
+        prog=prog,
         description="Plot the read-length distribution of a sequencing run as "
                     "a histogram in the terminal. Takes a directory of FASTQs "
                     "or a single file; .gz is read directly.")
@@ -650,6 +786,9 @@ def lengths_main(argv=None):
                              "is set")
     parser.add_argument("--no-progress", action="store_true",
                         help="do not report progress while scanning")
+    parser.add_argument("--no-live", action="store_true",
+                        help="draw the histogram once the scan finishes rather "
+                             "than filling it in as reads are counted")
     parser.add_argument("--slow", action="store_true",
                         help="scan without numpy, which is slower on a large "
                              "file and reports the same figures")
@@ -660,7 +799,8 @@ def lengths_main(argv=None):
         print(f"no FASTQ files at {args.reads}", file=sys.stderr)
         return 1
 
-    width = args.width or shutil.get_terminal_size((80, 24)).columns
+    window = shutil.get_terminal_size((80, 24))
+    width = args.width or window.columns
     palette = None
     if not (args.no_color or os.environ.get("NO_COLOR")
             or not sys.stdout.isatty()):
@@ -678,28 +818,56 @@ def lengths_main(argv=None):
         files = f"{len(group)} file{'s' if len(group) != 1 else ''}"
         print(f"{label}  {dim('·')}  {dim(files)}")
 
+        view = LiveView(width, args.bins, args.bulk, args.log, palette=palette,
+                        rows=window.lines, enabled=not args.no_live)
+        # A live view already reports its own progress, so the line on stderr
+        # is only for a scan that is not being drawn.
         bar = ScanProgress(width, palette=palette,
-                           enabled=not args.no_progress)
-        counts = lengths.count_lengths(group, progress=bar.update,
+                           enabled=not args.no_progress and not view.enabled)
+
+        def report(done, total, reads, snapshot=None):
+            view.update(done, total, reads, snapshot)
+            bar.update(done, total, reads)
+
+        counts = lengths.count_lengths(group, progress=report,
                                        fast=False if args.slow else None)
         bar.clear()
-
-        if counts.empty:
-            print("no reads")
-            continue
-        summary = lengths.summarise_counts(counts)
-        binning = lengths.bin_counts(counts, args.bins, args.bulk)
-        print()
-        for line in lengths.histogram(binning, width, args.log, palette):
-            print(line)
-        print()
-        for line in lengths.summary_lines(summary, binning):
-            print(textwrap.fill(line, width))
-        note = bar.note()
-        if note:
-            print(dim(note))
+        view.took = view.took or bar.took
+        view.bytes = view.bytes or bar.bytes
+        view.finish(counts)
     return 0
 
 
+def seqview_main(argv=None):
+    """Dispatch ``seqview <command>`` to that command's own parser.
+
+    Each command is installed under its own name as well -- ``seqviewer-pileup``
+    and ``seqviewer-lengths`` -- and takes the same arguments either way.
+    """
+    commands = {
+        "pileup": (main, "align reads to a reference and write a pileup page"),
+        "lengths": (lengths_main,
+                    "plot the read-length distribution in the terminal"),
+    }
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if argv and argv[0] in commands:
+        name = argv[0]
+        return commands[name][0](argv[1:], prog=f"seqview {name}")
+
+    label = max(len(name) for name in commands)
+    usage = ["usage: seqview <command> [options]", "", "commands:"]
+    usage += [f"  {name:<{label}}  {blurb}"
+              for name, (_, blurb) in commands.items()]
+    usage += ["", "seqview <command> --help lists that command's options."]
+
+    asked = argv[:1] in (["-h"], ["--help"])
+    stream = sys.stdout if asked else sys.stderr
+    if argv and not asked:
+        print(f"seqview: unknown command {argv[0]!r}", file=stream)
+    print("\n".join(usage), file=stream)
+    return 0 if asked else 2
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(seqview_main())
