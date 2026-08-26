@@ -256,19 +256,35 @@ itself; `--no-progress` silences it. Colour is used when stdout is a terminal an
 
 ### As a figure
 
-`--png` draws the same binning to a PNG and opens it. Given no path, the file
+`--png` draws the same binning to a figure and opens it. Given no path, the file
 takes the run's name and lands in `~/Downloads`:
 
 ```bash
 seqview lengths reads/ --png
+seqview lengths reads/ --png figures/          # a directory to write into
+seqview lengths reads/ --png lengths.pdf       # the suffix picks the format
 ```
 
-The figure is drawn from the same tally, axis and flags as the histogram just
-printed, so the two agree, and its caption names the reads the axis leaves out so
-that it is not read as the whole distribution. `--log` applies to it as well, and
-`--no-open` writes the file without opening it. This needs the `plot` extra, which
-adds matplotlib; `seqviewer.plot` imports it inside the drawing function, so
-nothing else in the package depends on it.
+It is drawn to journal-figure conventions: Arial at 7–8 pt, thin rules, ticks
+outward, no gridlines and no box, the panel 183 mm across — the width of a
+two-column figure — and 300 dpi. The suffix chooses the format, and a PDF or SVG
+keeps its text as text, so the figure can still be edited in Illustrator.
+
+Under the panel are the figures that the bars do not carry: the read count, the
+median, the mean and the N50. Where the axis is clipped, a second line names the
+reads left off it and gives the full range, so the panel is not read as the whole
+distribution. `--log` applies here too, and `--no-open` writes the file without
+opening it.
+
+`PATH` may be a file or a directory. A directory is written into rather than
+written over, and a name with no suffix gains `.png`: matplotlib appends the
+extension itself when a name has none, which would otherwise turn `--png
+~/Downloads/` into a file called `Downloads.png` beside the folder.
+
+This needs the `plot` extra, which adds matplotlib. `seqviewer.plot` imports it
+inside the drawing function and applies its styling through `rc_context`, so
+nothing else in the package depends on it and a caller's own settings are left
+alone.
 
 ### Gzipped input
 

@@ -1120,27 +1120,6 @@ def test_a_log_png_differs_from_a_linear_one(tmp_path):
     assert flat.read_bytes() != tall.read_bytes()
 
 
-def test_the_caption_says_what_the_axis_leaves_out():
-    from seqviewer.plot import _bar_caption
-
-    counts = lengths.LengthCounts.from_lengths([800] * 1000 + [80, 9000])
-    binning = lengths.bin_counts(counts)
-    caption = _bar_caption(binning, lengths.summarise_counts(counts))
-    assert "1,002 reads" in caption
-    assert "9,000" in caption                    # the true maximum
-    assert "are not drawn" in caption
-    assert "shorter than" in caption and "longer than" in caption
-
-
-def test_the_caption_is_one_line_when_nothing_is_clipped():
-    from seqviewer.plot import _bar_caption
-
-    counts = lengths.LengthCounts.from_lengths([800] * 100)
-    binning = lengths.bin_counts(counts, bulk=100)
-    caption = _bar_caption(binning, lengths.summarise_counts(counts))
-    assert "\n" not in caption and "not drawn" not in caption
-
-
 def test_drawing_a_png_needs_no_import_at_module_level():
     """Importing seqviewer must not pull matplotlib in."""
     import ast
@@ -1207,3 +1186,154 @@ def test_a_path_that_cannot_be_written_is_reported(tmp_path, capsys):
                          str(blocker / "x.png"), "--no-open"])
     assert code == 1
     assert "could not write" in capsys.readouterr().err
+
+
+# --- Where the figure goes ------------------------------------------------
+
+def test_a_directory_is_taken_as_the_folder_to_write_into(tmp_path):
+    """--png ~/Downloads/ asks for a file in Downloads, not one called that.
+
+    matplotlib appends the extension when a name has none, so passing the folder
+    through would have written Downloads.png beside the folder.
+    """
+    from seqviewer.cli import png_path
+
+    where = png_path("sample_1.fastq.gz", str(tmp_path))
+    assert where.parent == tmp_path
+    assert where.name == "sample_1-lengths.png"
+
+
+def test_a_trailing_slash_means_a_folder_even_if_it_is_absent(tmp_path):
+    from seqviewer.cli import png_path
+
+    absent = tmp_path / "not_yet"
+    where = png_path("a.fastq", f"{absent}/")
+    assert where == absent / "a-lengths.png"
+
+
+def test_a_name_without_a_suffix_gains_png(tmp_path):
+    from seqviewer.cli import png_path
+
+    assert png_path("a.fastq", str(tmp_path / "chart")).name == "chart.png"
+
+
+def test_another_suffix_is_left_alone(tmp_path):
+    """The suffix picks the format, so a PDF stays a PDF."""
+    from seqviewer.cli import png_path
+
+    for name in ("chart.pdf", "chart.svg", "chart.png"):
+        assert png_path("a.fastq", str(tmp_path / name)).name == name
+
+
+def test_writing_to_a_directory_is_refused(tmp_path):
+    pytest.importorskip("matplotlib")
+    from seqviewer import plot
+
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    with pytest.raises(IsADirectoryError):
+        plot.write_png(tmp_path, lengths.bin_counts(counts),
+                       lengths.summarise_counts(counts))
+
+
+def test_write_png_adds_the_suffix_itself(tmp_path):
+    """A caller of the module, not just the command, gets a named file."""
+    pytest.importorskip("matplotlib")
+    from seqviewer import plot
+
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    written = plot.write_png(tmp_path / "chart", lengths.bin_counts(counts),
+                             lengths.summarise_counts(counts))
+    assert written.name == "chart.png"
+    assert written.read_bytes()[:8] == PNG_MAGIC
+
+
+def test_the_command_writes_into_a_directory_given_one(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    from seqviewer.cli import lengths_main
+
+    reads = tmp_path / "reads"
+    reads.mkdir()
+    _fastq(reads / "sample_1.fastq", [800] * 300 + [90, 9000])
+    out = tmp_path / "figures"
+    out.mkdir()
+    assert lengths_main([str(reads), "--no-live", "--no-open",
+                         "--png", str(out)]) == 0
+    written = list(out.glob("*.png"))
+    assert len(written) == 1
+    assert written[0].read_bytes()[:8] == PNG_MAGIC
+    assert not (tmp_path / "figures.png").exists()   # not beside the folder
+
+
+# --- How the figure is styled -------------------------------------------
+
+def test_the_figure_is_drawn_at_three_hundred_dpi():
+    from seqviewer import plot
+
+    assert plot.DPI == 300
+
+
+def test_the_panel_is_the_width_of_a_two_column_figure():
+    from seqviewer import plot
+
+    assert plot.FIGSIZE == (7.2, 3.6)               # 183 mm across
+
+
+def test_arial_is_asked_for_first():
+    from seqviewer.plot import _STYLE
+
+    assert _STYLE["font.family"] == "sans-serif"
+    assert _STYLE["font.sans-serif"][0] == "Arial"
+    assert "DejaVu Sans" in _STYLE["font.sans-serif"]   # and a fallback
+
+
+def test_the_box_and_the_grid_are_left_off():
+    from seqviewer.plot import _STYLE
+
+    assert _STYLE["axes.spines.top"] is False
+    assert _STYLE["axes.spines.right"] is False
+    assert "axes.grid" not in _STYLE                # never turned on
+
+
+def test_the_style_does_not_leak_into_the_callers_settings(tmp_path):
+    """Applied through rc_context, so a caller keeps its own rcParams."""
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+
+    from seqviewer import plot
+
+    before = dict(plt.rcParams)
+    counts = lengths.LengthCounts.from_lengths([800] * 50)
+    plot.write_png(tmp_path / "a.png", lengths.bin_counts(counts),
+                   lengths.summarise_counts(counts))
+    assert plt.rcParams["font.size"] == before["font.size"]
+    assert plt.rcParams["axes.spines.top"] == before["axes.spines.top"]
+
+
+def test_the_figures_line_is_one_line_of_the_essentials():
+    from seqviewer.plot import _figures
+
+    counts = lengths.LengthCounts.from_lengths([800] * 1000 + [90, 9000])
+    line = _figures(lengths.summarise_counts(counts))
+    assert "\n" not in line
+    assert "n = 1,002 reads" in line
+    assert "median" in line and "N50" in line
+    assert "bases" not in line                      # left off, as extraneous
+
+
+def test_the_clipped_note_names_what_is_missing_and_the_true_range():
+    from seqviewer.plot import _clipped_note
+
+    counts = lengths.LengthCounts.from_lengths([800] * 1000 + [90, 9000])
+    binning = lengths.bin_counts(counts)
+    note = _clipped_note(binning, lengths.summarise_counts(counts))
+    assert "not shown" in note
+    assert "90–9,000 bp overall" in note            # the real extremes
+    assert "%" in note
+
+
+def test_there_is_no_clipped_note_when_nothing_is_clipped():
+    from seqviewer.plot import _clipped_note
+
+    counts = lengths.LengthCounts.from_lengths([800] * 100)
+    assert _clipped_note(lengths.bin_counts(counts, bulk=100),
+                         lengths.summarise_counts(counts)) is None

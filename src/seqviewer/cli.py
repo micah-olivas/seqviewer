@@ -660,18 +660,26 @@ def _run_stem(label):
 
 
 def png_path(label, given=None):
-    """Where a PNG of the run *label* goes.
+    """Where a figure of the run *label* goes.
 
-    A path given on the command line is used as it stands.  Otherwise the file
-    is named after the run and put in the user's Downloads folder, which is
-    where a browser would put it, falling back to the working directory when
-    there is no such folder.
+    A directory is read as the folder to write into and the file inside it is
+    named after the run, since ``--png ~/Downloads/`` asks for a file in
+    Downloads rather than a file called Downloads.  A name with no suffix gains
+    ``.png``.
+
+    Given nothing, the file is named after the run and put in the user's
+    Downloads folder, which is where a browser would put it, falling back to the
+    working directory when there is no such folder.
     """
+    named = f"{_run_stem(label)}-lengths.png"
     if given:
-        return Path(given).expanduser()
+        where = Path(given).expanduser()
+        if where.is_dir() or given.endswith(("/", os.sep)):
+            return where / named
+        return where if where.suffix else where.with_name(where.name + ".png")
     downloads = Path.home() / "Downloads"
     folder = downloads if downloads.is_dir() else Path.cwd()
-    return folder / f"{_run_stem(label)}-lengths.png"
+    return folder / named
 
 
 def open_in_viewer(path):
@@ -924,12 +932,14 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
                         help="draw the histogram once the scan finishes rather "
                              "than filling it in as reads are counted")
     parser.add_argument("--png", nargs="?", const="", metavar="PATH",
-                        help="also draw the histogram to a PNG and open it. "
-                             "Without a path it is named after the run and put "
-                             "in ~/Downloads. Needs the plot extra, which adds "
+                        help="also draw the histogram to a figure and open "
+                             "it. PATH may be a file or a directory; given "
+                             "neither, the file is named after the run and put "
+                             "in ~/Downloads. The suffix picks the format, .png "
+                             "by default. Needs the plot extra, which adds "
                              "matplotlib")
     parser.add_argument("--no-open", action="store_true",
-                        help="write the PNG without opening it")
+                        help="write the figure without opening it")
     parser.add_argument("--slow", action="store_true",
                         help="scan without numpy, which is slower on a large "
                              "file and reports the same figures")
@@ -1024,7 +1034,7 @@ def write_png(counts, args, label, dim):
 
     print(dim(f"wrote {written}"))
     if not args.no_open and not open_in_viewer(written):
-        print(dim("nothing here opens a PNG; the file is written"))
+        print(dim("nothing here opens that file; it is written"))
     return 0
 
 
