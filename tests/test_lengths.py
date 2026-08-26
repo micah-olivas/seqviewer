@@ -1337,3 +1337,56 @@ def test_there_is_no_clipped_note_when_nothing_is_clipped():
     counts = lengths.LengthCounts.from_lengths([800] * 100)
     assert _clipped_note(lengths.bin_counts(counts, bulk=100),
                          lengths.summarise_counts(counts)) is None
+
+
+# --- The figure's own bin count ------------------------------------------
+
+def test_the_figure_bins_finer_than_the_terminal():
+    from seqviewer.cli import PNG_BINS
+
+    assert PNG_BINS > lengths.DEFAULT_BINS
+
+
+def test_a_narrow_range_yields_fewer_bins_than_asked_for():
+    """Bin width floors at one base, so a tight run is not split per length."""
+    counts = lengths.LengthCounts.from_lengths(
+        [800 + i % 21 for i in range(5000)])
+    binning = lengths.bin_counts(counts, 240, bulk=100)
+    assert len(binning.bins) < 240
+    assert all(b.high - b.low == 1 for b in binning.bins)
+    assert sum(b.count for b in binning.bins) == 5000
+
+
+def test_the_figure_uses_png_bins_not_bins(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    import seqviewer.plot as plot_module
+    from seqviewer.cli import lengths_main
+
+    seen = {}
+    real = plot_module.write_png
+
+    def spy(path, binning, summary, **kw):
+        seen["bins"] = len(binning.bins)
+        return real(path, binning, summary, **kw)
+
+    plot_module.write_png = spy
+    try:
+        _fastq(tmp_path / "a.fastq", [200 + (i * 13) % 2400
+                                      for i in range(20000)])
+        lengths_main([str(tmp_path), "--no-live", "--no-open", "--width", "80",
+                      "--bins", "10", "--png-bins", "150",
+                      "--png", str(tmp_path / "out.png")])
+    finally:
+        plot_module.write_png = real
+
+    terminal_rows = capsys.readouterr().out
+    assert seen["bins"] > 100                   # the figure got the finer count
+    assert terminal_rows.count("–") >= 10       # and the terminal its own
+
+
+def test_bars_meet_once_they_are_thin():
+    """A hairline between many bars reads as a stripe over each one."""
+    from seqviewer.plot import EDGE_UNTIL
+
+    assert EDGE_UNTIL < 240                     # so the default has no edge
+    assert EDGE_UNTIL > lengths.DEFAULT_BINS    # and a coarse figure does

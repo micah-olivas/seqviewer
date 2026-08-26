@@ -270,6 +270,13 @@ outward, no gridlines, a full box, the panel 183 mm across — the width of a
 two-column figure — and 300 dpi. The suffix chooses the format, and a PDF or SVG
 keeps its text as text, so the figure can still be edited in Illustrator.
 
+The figure bins far finer than the terminal — 240 across the axis rather than 24
+— because it is bounded by its pixels rather than by the rows of a window, and
+structure the terminal has to smooth over fits in it. `--png-bins` moves that
+number; `--bins` stays the terminal's. Bin width floors at one base, so a run
+whose reads span a narrow range yields fewer bins than asked for rather than
+splitting single lengths.
+
 Under the panel are the figures that the bars do not carry: the read count, the
 median, the mean and the N50. Where the axis is clipped, a second line names the
 reads left off it and gives the full range, so the panel is not read as the whole

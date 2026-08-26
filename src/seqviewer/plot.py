@@ -23,7 +23,8 @@ from typing import Optional
 
 from .lengths import Binning, Summary
 
-__all__ = ["DPI", "FIGSIZE", "PngUnavailable", "write_png"]
+__all__ = ["DPI", "EDGE_UNTIL", "FIGSIZE", "PngUnavailable",
+           "write_png"]
 
 #: Dots per inch.  300 is the floor most journals accept for a raster figure.
 DPI = 300
@@ -31,6 +32,9 @@ DPI = 300
 #: Figure size in inches.  183 mm is the width of a two-column figure, and the
 #: height leaves the panel about twice as wide as it is tall.
 FIGSIZE = (7.2, 3.6)
+
+#: Bins up to which the bars are separated by a hairline.
+EDGE_UNTIL = 80
 
 #: The bars, tab10 blue.  One colour rather than a scale: a histogram of one
 #: variable carries no second quantity for colour to stand for.
@@ -150,8 +154,12 @@ def write_png(
         if binning.bins:
             width = binning.bins[0].high - binning.bins[0].low
             middles = [b.low + (b.high - b.low) / 2 for b in binning.bins]
+            # A hairline between bars separates them while they are wide enough
+            # to read one at a time.  Past that it is a stripe over each bar, so
+            # the bars are left to meet and the distribution reads as one shape.
+            edge = 0.3 if len(binning.bins) <= EDGE_UNTIL else 0.0
             axes.bar(middles, [b.count for b in binning.bins], width=width,
-                     color=_BAR, edgecolor="white", linewidth=0.3)
+                     color=_BAR, edgecolor="white", linewidth=edge)
             axes.set_xlim(binning.bins[0].low - width * 0.5,
                           binning.bins[-1].high + width * 0.5)
         if log:

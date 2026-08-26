@@ -507,6 +507,13 @@ def main(argv=None, prog=None):
     return 0
 
 
+#: Bins across a figure's axis.  Far more than the terminal's, because a figure
+#: is bounded by its pixels rather than by the rows of a window, and structure a
+#: terminal has to smooth over fits in it.  Bin width floors at one base, so a
+#: run whose reads span a narrow range yields fewer bins than this rather than
+#: splitting single lengths.
+PNG_BINS = 240
+
 #: Bytes a run must hold before a scan reports progress.  Below it the scan is
 #: over before a bar would be read.
 PROGRESS_AFTER_BYTES = 32 << 20
@@ -938,6 +945,10 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
                              "in ~/Downloads. The suffix picks the format, .png "
                              "by default. Needs the plot extra, which adds "
                              "matplotlib")
+    parser.add_argument("--png-bins", type=int, default=PNG_BINS, metavar="N",
+                        help=f"bins across the figure's axis (default "
+                             f"{PNG_BINS}). Separate from --bins, which sets "
+                             f"the terminal's, since a figure has room for more")
     parser.add_argument("--no-open", action="store_true",
                         help="write the figure without opening it")
     parser.add_argument("--slow", action="store_true",
@@ -1009,9 +1020,9 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
 def write_png(counts, args, label, dim):
     """Draw the tally to a PNG and open it.  Returns an exit status, or 0.
 
-    The binning is recomputed rather than carried out of the live view, so the
-    figure is drawn from the same tally and the same flags as the histogram just
-    printed.
+    The binning is recomputed rather than carried out of the live view, both
+    because the figure takes its own bin count and so that it is drawn from the
+    same tally as the histogram just printed.
     """
     try:
         from . import plot
@@ -1019,7 +1030,7 @@ def write_png(counts, args, label, dim):
         print(f"could not draw a PNG: {exc}", file=sys.stderr)
         return 1
 
-    binning = lengths.bin_counts(counts, args.bins, args.bulk)
+    binning = lengths.bin_counts(counts, args.png_bins, args.bulk)
     summary = lengths.summarise_counts(counts)
     destination = png_path(label, args.png)
     try:
