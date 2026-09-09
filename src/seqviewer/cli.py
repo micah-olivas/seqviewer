@@ -364,22 +364,21 @@ def build_parser(prog=None):
                              "or a FASTA header, is often not human-friendly); "
                              "used as the pooled group name and in the default "
                              "title")
-    parser.add_argument("--summary", action="store_true",
-                        help="also write a summarized page beside the pileup: "
-                             "the construct as an annotated map, one compact "
-                             "band per group with a lollipop per called "
-                             "variant, and the variants as a table. Named "
-                             "<out>.summary.html")
+    parser.add_argument("--no-summary", action="store_true",
+                        help="write only the pileup. Both pages are written by "
+                             "default: the summary reads one screen and links "
+                             "to the pileup, and the pileup carries the reads "
+                             "the summary reduces. Named <out>.summary.html")
     parser.add_argument("--variant-freq", type=float,
                         default=DEFAULT_MIN_FRACTION, metavar="F",
-                        help="share of covering reads an allele needs before "
+                        help="share of covering reads a variant needs before "
                              "the summary calls it (default "
                              f"{DEFAULT_MIN_FRACTION:g}). Lower it to see "
                              "events the default suppresses as sequencing "
                              "error; only meaningful with --summary")
     parser.add_argument("--variant-reads", type=int,
                         default=DEFAULT_MIN_COUNT, metavar="N",
-                        help="reads that must support an allele whatever the "
+                        help="reads that must support a variant whatever the "
                              f"share (default {DEFAULT_MIN_COUNT}). At shallow "
                              "depth a single read is the error rate, not a "
                              "variant; only meaningful with --summary")
@@ -480,10 +479,12 @@ def main(argv=None, prog=None):
         ref_len=len(reference),
     )
     log(f"flanks: {view.flanks} | {len(view.features)} features drawn")
-    out.write_text(render(view))
+    summary_out = summary_path(out)
+    out.write_text(render(
+        view, summary_href=None if args.no_summary else summary_out.name))
     print(f"Wrote {out.resolve()}")
 
-    if args.summary:
+    if not args.no_summary:
         # Reduced from the same view the pileup drew, so the two pages cannot
         # disagree about the reference, the focus region, or the features.
         summary = SummaryView.from_view(
@@ -498,8 +499,8 @@ def main(argv=None, prog=None):
             log(f"{group.name}: {called} variant{'s' if called != 1 else ''} "
                 f"called, {group.verdict}; {group.mean_depth:.0f}x mean depth "
                 f"over {group.covered} of {group.ref_len} positions")
-        summary_out = summary_path(out)
-        summary_out.write_text(render_summary(summary))
+        summary_out.write_text(
+            render_summary(summary, pileup_href=out.name))
         print(f"Wrote {summary_out.resolve()}")
 
     log_path = write_log(out, args, log_lines)

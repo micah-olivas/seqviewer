@@ -127,7 +127,7 @@ def _planted_rows(
 ) -> List[Row]:
     """Reads carrying planted variants over a low background error rate.
 
-    *carriers* is the share of reads carrying the planted alleles, which is what
+    *carriers* is the share of reads carrying the planted variants, which is what
     makes a subpopulation rather than a fixed difference.  *covers* restricts
     every read to a window, so a group can show a coverage dropout — the one
     thing a summary should never average away.

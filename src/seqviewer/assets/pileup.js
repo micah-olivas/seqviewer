@@ -752,6 +752,13 @@ function pileupPageSource() {
   [].forEach.call(clone.querySelectorAll('body > div'), function (n) {
     if (n.style && n.style.position === 'fixed') n.parentNode.removeChild(n);
   });
+  /* The overlay and the transition state belong to this visit, not to the
+     copy: serialising them mid-fade would save a page covered by its own
+     background. */
+  [].forEach.call(clone.querySelectorAll('.sv-fade'), function (n) {
+    n.parentNode.removeChild(n);
+  });
+  clone.classList.remove('sv-leaving', 'sv-ready');
   return '<!DOCTYPE html>\n' + clone.outerHTML;
 }
 
@@ -951,5 +958,36 @@ function bindCopyButtons() {
         btn.title = String(err && err.message || err);
       });
     });
+  });
+}
+
+/* The crossfade between this page and its summary.
+ *
+ * revealPage is called once the pileups are drawn, so the overlay lifts on a
+ * page that is finished rather than on one that is about to fill in. The cap is
+ * there because a page slow enough to miss it should be shown part-drawn rather
+ * than held behind a blank screen.
+ */
+var REVEAL_CAP_MS = 700;
+
+function revealPage() {
+  document.documentElement.classList.add('sv-ready');
+}
+
+function bindViewToggle() {
+  window.setTimeout(revealPage, REVEAL_CAP_MS);
+
+  var link = document.querySelector('.sv-views-fixed a.sv-view');
+  if (!link) { return; }
+  var still = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  link.addEventListener('click', function (event) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey
+        || event.shiftKey || event.altKey) { return; }
+    if (still) { return; }          /* navigate at once, with no fade */
+    event.preventDefault();
+    var href = link.getAttribute('href');
+    document.documentElement.classList.add('sv-leaving');
+    window.setTimeout(function () { window.location.href = href; }, 90);
   });
 }

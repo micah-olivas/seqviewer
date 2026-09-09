@@ -188,7 +188,7 @@ def test_the_cli_calling_thresholds_do_not_drift_from_the_reducer():
     defaults = {a.dest: a.default for a in build_parser()._actions}
     assert defaults["variant_freq"] == DEFAULT_MIN_FRACTION
     assert defaults["variant_reads"] == DEFAULT_MIN_COUNT
-    assert defaults["summary"] is False
+    assert defaults["no_summary"] is False       # both pages by default
 
 
 @pytest.mark.skipif(shutil.which("minimap2") is None
@@ -221,7 +221,7 @@ def test_summary_writes_a_second_page_reporting_the_planted_variant(tmp_path):
 
     out = tmp_path / "page"
     code = main([str(tmp_path / "reads.fastq"), str(tmp_path / "ref.fasta"),
-                 str(out), "--summary", "--variant-freq", "0.1"])
+                 str(out), "--variant-freq", "0.1"])
     assert code == 0
 
     pileup = out.with_suffix(".html")
@@ -231,8 +231,8 @@ def test_summary_writes_a_second_page_reporting_the_planted_variant(tmp_path):
 
     html = summary.read_text()
     assert html.startswith("<!DOCTYPE html>")
-    assert "SNV" in html
-    assert "Deletion" in html
+    assert "positions to check" in html
+    assert "called variant" in html                  # and what was called
     # The grid cannot carry an insertion, so none is reported however many
     # reads carry one.  This is the documented limit, pinned.
     assert "Insertion" not in html

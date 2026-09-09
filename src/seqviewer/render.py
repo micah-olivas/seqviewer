@@ -23,6 +23,7 @@ from .annotate import region_band_svg as _region_band_svg
 from .annotate import track_svg as _track_svg
 from .annotate import mismatch_mark_offsets as _mismatch_mark_offsets
 from .annotate import mismatch_track_svg as _mismatch_track_svg
+from .annotate import MISMATCH_TRACK_ALERT, MISMATCH_TRACK_CEILING
 from .summary import flagged_columns as _flagged_columns
 from .summary import mismatch_counts as _mismatch_counts
 from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
@@ -170,8 +171,12 @@ def _chip(status: str, highlighted: bool) -> str:
     )
 
 
-def render(view: PileupView) -> str:
-    """Render *view* to a complete HTML document and return it as a string."""
+def render(view: PileupView, summary_href: Optional[str] = None) -> str:
+    """Render *view* to a complete HTML document and return it as a string.
+
+    *summary_href* links to the summarized page for the same alignment, when one
+    is written beside this one.
+    """
     # The body below predates the typed model and reads its groups as plain
     # dicts.  Adapting here keeps the migrated renderer byte-for-byte identical
     # to the original while the public surface is dataclasses.
@@ -190,6 +195,16 @@ def render(view: PileupView) -> str:
     ]
     flank_lengths = view.flanks
     title = view.title
+    summary_link = ""
+    if summary_href:
+        summary_link = (
+            '<div class="sv-views-fixed"><div class="sv-views">'
+            f'<a class="sv-view" href="{_html.escape(summary_href)}" '
+            'title="The same alignment on one screen: disagreement with the '
+            'reference per position, the features, and the reads.">Summary</a>'
+            '<span class="sv-view" aria-current="page">Pileup</span>'
+            "</div></div>"
+        )
 
     _theme = view.theme
     _p = _theme.css_prefix
@@ -576,7 +591,11 @@ def render(view: PileupView) -> str:
     # flagged, which meant the key changed shape between pages.
     marks.append(
         '<span class="sv-kitem"><i class="sv-sw sv-sw-mf"></i>'
-        'disagreement, log scale to 1% and 10%</span>'
+        f'disagreement at or above {MISMATCH_TRACK_ALERT:.0%}</span>'
+    )
+    marks.append(
+        '<span class="sv-kitem"><i class="sv-sw sv-sw-mf-quiet"></i>'
+        f'below it, to scale up to {MISMATCH_TRACK_CEILING:.0%}</span>'
     )
     if has_flanks:
         marks.append(
@@ -630,6 +649,8 @@ var SV_PALETTE = {palette_js};
 </script>
 </head>
 <body>
+{summary_link}<div class="sv-fade"></div>
+<noscript><style>.sv-fade {{ display: none; }}</style></noscript>
 <div class="sv-panel">
     <div class="sv-panel-id">
         {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{head_chip}</div>
@@ -651,6 +672,9 @@ var SV_PALETTE = {palette_js};
    to find them all. */
 syncPileupScrolls();
 bindCopyButtons();
+bindViewToggle();
+/* Two frames: one for the layout the draws above queued, one for the paint. */
+requestAnimationFrame(function () {{ requestAnimationFrame(revealPage); }});
 </script>
 <script id="{_script_id}">
 {theme_js}

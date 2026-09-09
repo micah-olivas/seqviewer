@@ -89,14 +89,14 @@ Path("summary.html").write_text(render_summary(SummaryView.from_view(view)))
 
 Glyph shape carries the kind of change — substitution, deletion, insertion — and
 color carries the consequence: frameshift or premature stop, missense or in-frame
-indel, silent, or outside the reading frame. Stem height is the allele fraction.
+indel, silent, or outside the reading frame.
 Each called variant also gets a base-resolution window, drawn as one letter per
 base with each codon bracketed under the three bases it is translated from.
 
 A variant is called when at least 25% of the reads covering its position carry it
 and at least two of them do. `min_fraction` and `min_count` move both floors. The
 read floor matters at the depths these pages are made for: with ten reads, one
-read is 10%, so a fraction alone admits the per-base error rate as an allele.
+read is 10%, so a fraction alone admits the per-base error rate as a variant.
 
 Substitutions and deletions are recovered from the grid. Insertions are not. An
 inserted base has no reference position, so `align` drops it and a row stays

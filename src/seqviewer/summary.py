@@ -56,16 +56,16 @@ __all__ = [
     "summarize_group",
 ]
 
-#: Fraction of covering reads an allele needs before it is called.
+#: Fraction of covering reads a variant needs before it is called.
 #:
 #: Higher than the 10% the pileup page flags columns at, and deliberately so:
-#: flagging marks a column worth a human's eye, while calling asserts an allele
+#: flagging marks a column worth a human's eye, while calling asserts a variant
 #: is really there.  At the shallow depths these pages are made for, 10% is one
 #: read — on a 2% per-base error rate over 10 reads that fires on hundreds of
 #: columns, which buries the one mutation that matters.
 DEFAULT_MIN_FRACTION = 0.25
 
-#: Reads that must support an allele before it is called, whatever the fraction.
+#: Reads that must support a variant before it is called, whatever the fraction.
 #: A single read is never a variant; it is the error rate.
 DEFAULT_MIN_COUNT = 2
 
@@ -74,7 +74,7 @@ DEFAULT_MIN_DEPTH = 3
 
 #: Share of covering reads that must disagree with the reference before a column
 #: is worth a reader's eye.  Lower than the calling threshold on purpose: marking
-#: a column and asserting an allele are different claims.
+#: a column and asserting a variant are different claims.
 DEFAULT_FLAG_THRESHOLD = 0.10
 
 #: Consequences, worst first.  A group's verdict is the worst one it carries,
@@ -113,7 +113,7 @@ class Variant:
 
     @property
     def fraction(self) -> float:
-        """Share of covering reads carrying this allele."""
+        """Share of covering reads carrying this variant."""
         return self.count / self.depth if self.depth else 0.0
 
     @property
@@ -240,7 +240,7 @@ def _deletion_variants(
     """Merge adjacent deleted positions into one variant per run.
 
     Support is the reads whose own deletion covers the whole merged run, which
-    is the exact count for the allele being reported.  Reads deleting staggered,
+    is the exact count for the variant being reported.  Reads deleting staggered,
     partly-overlapping spans support no single run; when that leaves a run with
     no whole-run support, the thinnest per-position count stands in, so a real
     deletion is still reported rather than vanishing between two tallies.
@@ -285,8 +285,8 @@ def summarize_group(
 
     Args:
         group: The reads to reduce, as the pileup viewer takes them.
-        min_fraction: Share of covering reads an allele needs to be called.
-        min_count: Reads that must support an allele, whatever the fraction.
+        min_fraction: Share of covering reads a variant needs to be called.
+        min_count: Reads that must support a variant, whatever the fraction.
         min_depth: Reads that must cover a position before it is called.
         insertions: Optional sidecar evidence, ``position -> {sequence: count}``,
             for insertions the grid cannot carry.  A grid alone supplies none.
@@ -514,6 +514,12 @@ class SummaryView:
     #: which a reduction deliberately does not carry.  None when a summary was
     #: assembled directly, and then a page draws no such detail.
     source: Optional[PileupView] = None
+    #: The thresholds the variants were called under.  Recorded so that a page
+    #: states the ones actually used rather than the module's defaults, which a
+    #: caller may have overridden.
+    min_fraction: float = DEFAULT_MIN_FRACTION
+    min_count: int = DEFAULT_MIN_COUNT
+    min_depth: int = DEFAULT_MIN_DEPTH
 
     @property
     def ref_len(self) -> int:
@@ -583,4 +589,7 @@ class SummaryView:
             features=list(view.features),
             theme=view.theme,
             source=view,
+            min_fraction=min_fraction,
+            min_count=min_count,
+            min_depth=min_depth,
         )

@@ -329,16 +329,33 @@ def test_total_disagreement_is_drawn_at_full_height():
     assert "L0.0,0.0" in mismatch_track_svg([1.0], cell_w=4)
 
 
-def test_the_marks_land_at_even_fractions_of_the_height():
-    """A decade per third is what lets one row hold a noise floor and a variant.
-
-    With a floor of 0.1%, the decades to 100% are 1% and 10%, so the two marks
-    sit at a third and two thirds.
+def test_a_rate_is_drawn_in_proportion_to_the_ceiling():
+    """The height reads off the gridlines directly: at a ceiling of 50%, a
+    tenth of the reads is a fifth of the track and half of them fill it.
     """
-    assert MISMATCH_TRACK_MARKS == (0.01, 0.10)
-    assert mismatch_level(0.01) == pytest.approx(1 / 3)
-    assert mismatch_level(0.10) == pytest.approx(2 / 3)
+    from seqviewer.annotate import MISMATCH_TRACK_CEILING
+
+    assert MISMATCH_TRACK_CEILING == 0.50
+    assert MISMATCH_TRACK_MARKS == (0.10, 0.50)
+    assert mismatch_level(0.10) == pytest.approx(0.2)
+    assert mismatch_level(0.25) == pytest.approx(0.5)
+    assert mismatch_level(0.50) == 1.0
+
+
+def test_a_rate_over_the_ceiling_fills_the_track_and_no_more():
+    """The exact rate is in the hover; the bar says only that it is past the
+    top, which is what stops one column setting the scale for the rest.
+    """
+    assert mismatch_level(0.75) == 1.0
     assert mismatch_level(1.0) == 1.0
+
+
+def test_the_noise_floor_stays_off_the_track():
+    """Every position disagrees a little.  Drawing all of it is what the log
+    scale did, and it filled the row with sequencing error.
+    """
+    assert mismatch_level(0.0005) == 0.0
+    assert mismatch_level(0.01) < 0.03
 
 
 def test_the_scale_separates_magnitudes_a_ceiling_would_flatten():
@@ -370,8 +387,8 @@ def test_the_scale_is_labelled_outside_the_scrolling_drawing():
     from seqviewer.annotate import mismatch_mark_offsets
 
     svg = mismatch_track_svg([0.0] * 10, cell_w=4)
-    assert ">1%<" not in svg and ">10%<" not in svg
-    assert [label for label, _ in mismatch_mark_offsets()] == ["1%", "10%"]
+    assert ">10%<" not in svg and ">50%<" not in svg
+    assert [label for label, _ in mismatch_mark_offsets()] == ["10%", "50%"]
 
 
 def test_a_mark_sits_on_the_gridline_it_names():

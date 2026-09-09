@@ -112,19 +112,19 @@ def test_a_deletion_reaching_the_end_of_coverage_is_not_called():
 # --- Calling thresholds ---------------------------------------------------
 
 def test_a_single_supporting_read_is_never_a_variant():
-    """One read disagreeing is the error rate, not an allele."""
+    """One read disagreeing is the error rate, not a variant."""
     specs = ["T..."] + ["...."] * 3
     s = summarize_group(_group("ACGT", *specs), min_fraction=0.1, min_count=2)
     assert s.variants == []
 
 
-def test_an_allele_below_the_fraction_floor_is_not_called():
+def test_a_variant_below_the_fraction_floor_is_not_called():
     specs = ["T...", "T..."] + ["...."] * 18
     s = summarize_group(_group("ACGT", *specs), min_fraction=0.25, min_count=2)
     assert s.variants == []
 
 
-def test_an_allele_clearing_both_floors_is_called():
+def test_a_variant_clearing_both_floors_is_called():
     specs = ["T...", "T..."] + ["...."] * 2
     s = summarize_group(_group("ACGT", *specs), min_fraction=0.25, min_count=2)
     assert [(v.pos, v.ref, v.alt, v.count, v.depth) for v in s.variants] == [
@@ -138,7 +138,7 @@ def test_a_position_below_the_depth_floor_is_not_called_at_all():
     assert s.variants == []
 
 
-def test_two_alternative_alleles_at_one_position_are_both_called():
+def test_two_alternative_variants_at_one_position_are_both_called():
     specs = ["T...", "T...", "G...", "G..."]
     s = summarize_group(_group("ACGT", *specs), min_fraction=0.25, min_count=2)
     assert sorted(v.alt for v in s.variants) == ["G", "T"]
@@ -365,7 +365,7 @@ def test_flagged_columns_measures_against_covering_reads_only():
 
 
 def test_flagged_columns_is_looser_than_the_calling_threshold():
-    """Marking a column and asserting an allele are different claims."""
+    """Marking a column and asserting a variant are different claims."""
     assert DEFAULT_FLAG_THRESHOLD < DEFAULT_MIN_FRACTION
 
 

@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 from seqviewer.construct import Feature, Reference
 from seqviewer.pileup import PileupGroup, PileupView
-from seqviewer.render_summary import MAX_TABLE_ROWS, render_summary
+from seqviewer.render_summary import MAX_INSPECTORS, render_summary
 from seqviewer.summary import SummaryView
 from seqviewer.theme import Theme
 from seqviewer.demo import build_summary_view
@@ -72,14 +72,20 @@ def test_every_drawing_is_well_formed_xml():
 
 
 def test_the_page_carries_no_javascript_data_payload():
-    """The only script is the theme bridge.
+    """Both scripts are static: the theme bridge and the view crossfade.
 
     Drawing in SVG rather than canvas is what keeps free-text feature labels out
     of a <script> block, where json.dumps would not have escaped ``</script>``.
+    A label that closes the tag is drawn to prove it.
     """
-    scripts = re.findall(r"<script\b[^>]*>(.*?)</script>", _render("." * len(REF)), re.S)
-    assert len(scripts) == 1
-    assert "localStorage" in scripts[0]
+    hostile = Feature("CDS", 0, 9, label="</script><b>gotcha")
+    html = _render("." * len(REF), features=[hostile])
+    scripts = re.findall(r"<script\b[^>]*>(.*?)</script>", html, re.S)
+    assert len(scripts) == 2
+    assert any("localStorage" in block for block in scripts)
+    assert any("sv-leaving" in block for block in scripts)
+    # Nothing from the view reaches a script, however the label is written.
+    assert not any("gotcha" in block for block in scripts)
 
 
 def test_deterministic():
@@ -118,29 +124,40 @@ def test_a_status_string_is_escaped():
 
 def test_a_clean_group_says_so_and_draws_no_lollipops():
     html = _render("." * len(REF), "." * len(REF))
-    assert "No variants cleared" in html
+    assert "No position disagrees" in html
     assert "No variants called" in html
     assert 'class="sv-head' not in html
 
 
-def test_a_called_variant_becomes_a_lollipop_and_a_table_row():
+def test_a_called_variant_becomes_a_mark_and_a_table_row():
     spec = "..." + "G........" + "..."
     html = _render(spec, spec)
-    assert html.count('class="sv-head ') == 1
+    assert html.count('class="sv-mark ') == 1
     assert "M1V" in html
     assert "Missense" in html
 
 
-def test_a_substitution_carries_its_alternate_base_as_a_letter():
-    spec = "..." + "G........" + "..."
-    assert 'class="sv-head-letter"' in _render(spec, spec)
+def test_a_mark_is_the_same_size_whatever_the_frequency():
+    """Height said the same thing as the bar under it, and disagreed with it:
+    a called position is not always the worst one on the page.
+    """
+    import re
+
+    clean = "." * 15
+    hit = "..." + "G........" + "..."
+    # Two of six carry it, then six of six: both clear the calling floors, so
+    # both draw a mark and the marks must be identical.
+    rare = _render(hit, hit, clean, clean, clean, clean)
+    common = _render(*([hit] * 6))
+    shape = re.compile(r'<path d="(M[^"]+)"')
+    assert shape.search(rare), "the rare case called nothing"
+    assert shape.search(rare).group(1) == shape.search(common).group(1)
 
 
-def test_a_deletion_is_drawn_as_a_different_shape_from_a_substitution():
-    deletion = "..." + "...---..." + "..."
-    substitution = "..." + "G........" + "..."
-    assert "<polygon class=\"sv-head" in _render(deletion, deletion)
-    assert "<circle class=\"sv-head" in _render(substitution, substitution)
+def test_a_mark_names_the_change_and_its_reads_on_hover():
+    html = _render("..." + "G........" + "...", "..." + "G........" + "...")
+    assert "<title>" in html
+    assert "reads" in html
 
 
 def test_severity_reaches_the_glyph_as_a_class():
@@ -156,7 +173,6 @@ def test_the_reading_frame_is_marked_on_the_band():
     # The rule is always in the stylesheet; only the element is conditional.
     assert '<line class="sv-focus-edge"' in with_frame
     assert '<line class="sv-focus-edge"' not in without
-    assert '<rect class="sv-ribbon-focus"' in with_frame
 
 
 def test_features_are_drawn_by_the_shared_annotation_module():
@@ -181,16 +197,21 @@ def test_a_coverage_profile_is_drawn():
     assert 'class="sv-depth"' in _render("." * len(REF))
 
 
-def test_the_legend_explains_the_glyph_vocabulary():
+def test_no_legend_is_spent_on_the_glyph_vocabulary():
+    """It cost a block at the top of every page; the glyphs are titled where
+    they are drawn, so hovering one names it.
+    """
     html = _render("." * len(REF))
-    assert "substitution" in html
-    assert "deletion" in html
-    assert "allele frequency" in html
+    assert "sv-key" not in html
+    assert "stem height" not in html
 
 
 # --- Long output ----------------------------------------------------------
 
-def test_a_very_long_variant_list_is_cut_short_and_says_so():
+def test_a_reference_that_disagrees_throughout_is_one_stretch():
+    """Four hundred disagreeing positions are one finding, not four hundred
+    rows: the caller reports a variant per position, and the page joins them.
+    """
     ref = "A" * 400
     specs = ["T" * 400, "T" * 400]
     view = PileupView(title="t", groups=[
@@ -199,8 +220,52 @@ def test_a_very_long_variant_list_is_cut_short_and_says_so():
     html = render_summary(
         SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
     )
-    assert "further variants not listed" in html
-    assert html.count("<tr>") <= MAX_TABLE_ROWS + 1
+    assert "1 position to check" in html
+    assert "1&ndash;400" in html or "1\u2013400" in html
+    assert "400 bp" in html
+    assert html.count('sv-zoom"') == 1
+
+
+def test_more_stretches_than_windows_says_how_many_are_shown():
+    """Scattered positions stay separate stretches, and the line says how many
+    of them the windows below it cover.
+    """
+    ref = "A" * 400
+    # A disagreeing position every twentieth base, so they do not join.
+    spec = "".join("T" if i % 20 == 0 else "." for i in range(400))
+    view = PileupView(title="t", groups=[
+        PileupGroup("g", ref, [_row(ref, spec) for _ in range(2)], n_reads=2)
+    ])
+    html = render_summary(
+        SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
+    )
+    assert "20 positions to check" in html
+    assert f"{MAX_INSPECTORS} shown" in html
+    assert html.count('sv-zoom"') <= MAX_INSPECTORS
+
+
+def test_the_worst_stretches_are_the_ones_drawn():
+    """The windows cost a hundred columns of reads each, so the space goes to
+    the stretches carrying the most reads.
+    """
+    from seqviewer.render_summary import flagged_runs
+
+    ref = "A" * 200
+    # One position every read disagrees at, and one only half of them do.
+    heavy = "".join("T" if i == 50 else "." for i in range(200))
+    light = "".join("T" if i in (50, 150) else "." for i in range(200))
+    group = SummaryView.from_view(
+        PileupView(title="t", groups=[
+            PileupGroup("g", ref, [_row(ref, heavy), _row(ref, light)],
+                        n_reads=2)
+        ]),
+        min_depth=1, min_count=1, min_fraction=0.25,
+    ).groups[0]
+
+    runs = flagged_runs(group)
+    peaks = {start: peak for start, _, peak in runs}
+    assert peaks[50] == 1.0
+    assert peaks[150] == 0.5
 
 
 # --- Theme bridge ---------------------------------------------------------

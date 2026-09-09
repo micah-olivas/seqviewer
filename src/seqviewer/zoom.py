@@ -33,7 +33,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
+from .annotate import feature_colors
 from .codon import translate_codon
+from .construct import Feature
 from .grid import Row
 
 __all__ = [
@@ -65,6 +67,17 @@ MAX_READ_ROWS = 16
 
 #: Height of the band holding the codon brackets and their residues.
 CODON_H = 24.0
+
+#: Height of the feature band drawn over the window.  Tall enough for a label
+#: at the window's own type size, since a name too small to read is a colour.
+FEATURE_H = 17.0
+
+#: Type size for a feature's name in the band.
+FEATURE_LABEL = 11.0
+
+#: How solid a feature is drawn.  The same weight the summary's feature track
+#: uses, so a region looks the same in the window as it does on the track.
+FEATURE_FILL = 0.55
 
 #: Space above the ruler and below the last row.
 PAD_TOP = 14.0
@@ -188,6 +201,9 @@ def window_svg(
     prefix: str = "svz",
     max_read_rows: int = MAX_READ_ROWS,
     label: str = "",
+    features: Sequence[Feature] = (),
+    mismatch: Optional[Sequence[float]] = None,
+    alert: float = 0.10,
 ) -> Window:
     """Draw ``[start, end)`` of an alignment at one letter per base.
 
@@ -202,6 +218,13 @@ def window_svg(
         prefix: Class-name prefix, so two windows on one page cannot collide.
         max_read_rows: Reads drawn before the rest are counted instead.
         label: Optional caption drawn above the ruler.
+        features: Features to draw as a band over the window, so a position is
+            read against the construct rather than against coordinates alone.
+        mismatch: Disagreement per reference position.  Columns at or above
+            *alert* are shaded, which is what the shading is for: an eye
+            crossing the window should land on the positions that carry a real
+            share of the reads.
+        alert: The rate a column is shaded at.
 
     Returns:
         A :class:`Window` carrying the SVG and what it had to leave out.
@@ -221,8 +244,10 @@ def window_svg(
     codon_band = CODON_H if has_frame else 0.0
 
     width = columns * CELL_W
+    band = FEATURE_H if features else 0.0
     ruler_y = PAD_TOP
-    ref_y = ruler_y + ROW_H
+    feature_y = ruler_y + 2.0
+    ref_y = feature_y + band + ROW_H
     cons_y = ref_y + ROW_H
     codon_y = cons_y + ROW_H
     reads_y = codon_y + codon_band
@@ -235,15 +260,44 @@ def window_svg(
         f'aria-label="{_e(label or "sequence window")}">'
     ]
 
-    # --- alternating column shading, so the eye can hold a column ---
-    for column in range(columns):
-        if (start + column) % 10 < 5:
+    # --- shading marks the columns that disagree, not every fifth one ---
+    if mismatch is not None:
+        for column in range(columns):
+            i = start + column
+            if i >= len(mismatch) or mismatch[i] < alert:
+                continue
+            parts.append(
+                f'<rect class="{prefix}-hot" x="{column * CELL_W:.1f}" '
+                f'y="{ref_y - ROW_H:.1f}" width="{CELL_W:.1f}" '
+                f'height="{height - (ref_y - ROW_H) - 4:.1f}" />'
+            )
+
+    # --- the features covering this window, as a band over it ---
+    for feature in features:
+        left = max(feature.start, start)
+        right = min(feature.end, end)
+        if right <= left:
             continue
+        x = (left - start) * CELL_W
+        w = (right - left) * CELL_W
+        light, dark = feature_colors(feature)
+        name = feature.label or feature.type
         parts.append(
-            f'<rect class="{prefix}-stripe" x="{column * CELL_W:.1f}" '
-            f'y="{ruler_y:.1f}" width="{CELL_W:.1f}" '
-            f'height="{height - ruler_y - 4:.1f}" />'
+            f'<g class="{prefix}-feat"><title>{_e(name)} '
+            f'({feature.start + 1}\u2013{feature.end})</title>'
+            f'<rect x="{x:.1f}" y="{feature_y:.1f}" width="{w:.1f}" '
+            f'height="{FEATURE_H:.1f}" fill="{light}" '
+            f'fill-opacity="{FEATURE_FILL}" rx="2" />'
         )
+        # The label goes in only where it fits: a name wider than the span it
+        # belongs to would read as belonging to its neighbours.
+        if w >= len(name) * FEATURE_LABEL * 0.64:
+            parts.append(
+                f'<text class="{prefix}-featlabel" x="{x + w / 2:.1f}" '
+                f'y="{feature_y + FEATURE_H / 2:.1f}" text-anchor="middle" '
+                f'dy="0.35em">{_e(name)}</text>'
+            )
+        parts.append("</g>")
 
     # --- ruler: a number every ten bases, on the base it labels ---
     for column in range(columns):
@@ -379,10 +433,13 @@ svg.{prefix} {{ display: block; max-width: 100%; height: auto; }}
     font-variant-ligatures: none;
     -webkit-font-smoothing: antialiased;
 }}
-.{prefix}-stripe {{ fill: var(--{t}-grid); opacity: 0.35; }}
 .{prefix}-pos {{ font-size: 9px; fill: var(--muted); font-family: var(--mono); }}
 .{prefix}-ref {{ fill: var(--{t}-tick-label); font-weight: 700; }}
-.{prefix}-same {{ fill: var(--muted); }}
+.{prefix}-hot {{ fill: var(--{t}-mm); opacity: 0.13; }}
+.{prefix}-featlabel {{
+    font: 600 {FEATURE_LABEL:.0f}px var(--mono); fill: var(--{t}-text);
+}}
+.{prefix}-same {{ fill: var(--muted); opacity: 0.42; }}
 .{prefix}-b {{ font-weight: 700; }}
 .{prefix}-a {{ fill: var(--{t}-a); }}
 .{prefix}-t {{ fill: var(--{t}-t); }}

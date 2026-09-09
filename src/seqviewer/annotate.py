@@ -25,10 +25,12 @@ __all__ = [
     "cell_width", "plan_track", "track_svg", "track_style", "TrackPlan", "Glyph",
     "LANE_HEIGHT", "LANE_GAP", "LABEL_SIZE", "FEATURE_PALETTE",
     "feature_colors", "outline_color", "label_color", "palette_key",
+    "drawn_fill", "FEATURE_FILL_OPACITY",
     "region_band_svg", "region_spans", "REGION_BAND_HEIGHT",
     "mismatch_track_svg", "mismatch_mark_offsets",
     "MISMATCH_TRACK_HEIGHT", "MISMATCH_TRACK_FLOOR",
-    "MISMATCH_TRACK_MARKS", "mismatch_level",
+    "MISMATCH_TRACK_MARKS", "MISMATCH_TRACK_ALERT",
+    "MISMATCH_TRACK_CEILING", "mismatch_level",
 ]
 
 #: Height of one feature glyph, and the space between lanes.  Sized to hold a
@@ -42,6 +44,16 @@ LANE_GAP = 4
 #: be measured here instead of in the browser.
 LABEL_SIZE = 10
 _MONO_ADVANCE = 0.60
+
+#: How solid a feature glyph is drawn.  Features are landmarks the reader looks
+#: past to the data, so they are lighter than the tracks around them.  The
+#: outline is left at full strength, which is what keeps a pale glyph a shape.
+FEATURE_FILL_OPACITY = 0.55
+
+#: The page ground each theme blends a fill against.  Only used to choose a
+#: label colour, which has to be legible over what the fill actually looks like
+#: once it is drawn at :data:`FEATURE_FILL_OPACITY`.
+_GROUND = {"light": "#fafafa", "dark": "#1a1a2e"}
 
 #: Padding inside a glyph before its label, and beside it for an outside label.
 _LABEL_INSET = 4
@@ -521,38 +533,50 @@ MISMATCH_TRACK_HEIGHT = 26
 #: so a real noise floor still has height to be seen against.
 MISMATCH_TRACK_FLOOR = 0.001
 
-#: Fractions drawn as gridlines, and where the scale is pinned.  A linear scale
-#: cannot show a 0.3% noise floor and a 60% variant in one row: at 0-100% the
-#: noise is a sub-pixel line, and clipping at 1% makes 1% and 60% identical.
-#: A log scale between the floor and 1.0 puts these two marks at even thirds.
-MISMATCH_TRACK_MARKS = (0.01, 0.10)
+#: The rate the track tops out at.  Findings sit well below 1.0 -- half the
+#: reads disagreeing is already a clear one -- so the height is spent on the
+#: range that carries them.  A column above this is drawn full height and its
+#: exact rate is read from the hover.
+MISMATCH_TRACK_CEILING = 0.50
+
+#: Fractions drawn as gridlines, and where the scale is pinned.
+MISMATCH_TRACK_MARKS = (0.10, 0.50)
+
+#: Rate at or above which a bar is drawn as a finding rather than as noise.
+#: A gridline is drawn here, so the change of colour lands on a line the reader
+#: can already see.  Distinct from the ceiling: where the scale tops out and
+#: what counts as worth acting on are different questions.
+MISMATCH_TRACK_ALERT = 0.10
 
 
-def mismatch_level(freq: float, floor: float = MISMATCH_TRACK_FLOOR) -> float:
+def mismatch_level(freq: float, floor: float = MISMATCH_TRACK_FLOOR,
+                   ceiling: float = MISMATCH_TRACK_CEILING) -> float:
     """Map a disagreement fraction onto 0-1 of the track's height.
 
-    Logarithmic between *floor* and 1.0, so each decade gets equal room. With the
-    default floor, 0.1% sits on the baseline, 1% a third of the way up, 10% two
-    thirds, and 100% at the top.
+    Proportional between zero and *ceiling*, so a rate reads off the gridlines
+    directly and the noise floor stays near the baseline where it belongs.  A
+    column at or above *ceiling* fills the track.
+
+    *floor* is the rate below which nothing is drawn at all, which keeps a
+    reference of several thousand positions from emitting a sub-pixel step at
+    every one of them.
     """
-    if freq <= floor or floor <= 0:
+    if freq <= floor or ceiling <= 0:
         return 0.0
-    if freq >= 1.0:
-        return 1.0
-    log_floor = math.log10(floor)
-    return (math.log10(freq) - log_floor) / (0.0 - log_floor)
+    return min(1.0, freq / ceiling)
 
 
 def mismatch_mark_offsets(height: int = MISMATCH_TRACK_HEIGHT,
                           floor: float = MISMATCH_TRACK_FLOOR,
-                          marks: Sequence[float] = MISMATCH_TRACK_MARKS):
+                          marks: Sequence[float] = MISMATCH_TRACK_MARKS,
+                          ceiling: float = MISMATCH_TRACK_CEILING):
     """Where each mark sits, as ``(label, y)`` from the top of the track.
 
     The track scrolls and its scale does not, so the labels are placed outside
     the drawing and pinned.  Their positions still come from here, because the
     scale that puts the gridlines where they are has to put the numbers on them.
     """
-    return [(f"{mark:.0%}", height - mismatch_level(mark, floor) * height)
+    return [(f"{mark:.0%}", height - mismatch_level(mark, floor, ceiling) * height)
             for mark in marks]
 
 
@@ -563,18 +587,23 @@ def mismatch_track_svg(
     height: int = MISMATCH_TRACK_HEIGHT,
     floor: float = MISMATCH_TRACK_FLOOR,
     marks: Sequence[float] = MISMATCH_TRACK_MARKS,
+    alert: float = MISMATCH_TRACK_ALERT,
+    ceiling: float = MISMATCH_TRACK_CEILING,
 ) -> str:
     """Per-position disagreement as one step histogram, one bar per base.
 
     *freqs* is one fraction per reference position, as
     :func:`seqviewer.summary.mismatch_fractions` computes it. Height is
-    logarithmic between *floor* and 1.0 -- see :func:`mismatch_level` -- so a
-    sub-percent noise floor and a dominant variant are both legible in one row.
+    proportional up to *ceiling* -- see :func:`mismatch_level`.
 
     *marks* are drawn as gridlines and labelled, which is what lets a bar be read
     as a magnitude rather than just compared with its neighbours. The topmost mark
     is where the flag threshold sits, so this row carries what the separate row of
     flag triangles used to say.
+
+    A bar reaching *alert* is drawn in the alert colour and the rest are muted.
+    Every position carries some disagreement from sequencing error alone, and a
+    track coloured throughout spends the reader's attention on that floor.
 
     A run of equal fractions collapses to one path segment rather than a command
     per base, which keeps a mostly-clean reference from emitting one per column.
@@ -594,7 +623,7 @@ def mismatch_track_svg(
 
     # Gridlines first, so the bars read over them.
     for mark in marks:
-        y = height - mismatch_level(mark, floor) * height
+        y = height - mismatch_level(mark, floor, ceiling) * height
         parts.append(
             f'<line class="{prefix}-grid" x1="0" y1="{y:.1f}" '
             f'x2="{width:.0f}" y2="{y:.1f}"/>'
@@ -606,7 +635,7 @@ def mismatch_track_svg(
         j = i
         while j < n and freqs[j] == freqs[i]:
             j += 1
-        y = height - mismatch_level(freqs[i], floor) * height
+        y = height - mismatch_level(freqs[i], floor, ceiling) * height
         x0, x1 = i * cell_w, j * cell_w
         d.append(f"L{x0:.1f},{y:.1f}")
         d.append(f"L{x1:.1f},{y:.1f}")
@@ -614,20 +643,67 @@ def mismatch_track_svg(
     d.append(f"L{width:.0f},{height}")
     d.append("Z")
     parts.append(f'<path class="{prefix}-fill" d="{"".join(d)}"/>')
+
+    # The columns over the threshold, redrawn over the muted track.  One closed
+    # shape per run, so a stretch of them reads as a block rather than as a
+    # picket fence.
+    hot: List[str] = []
+    i = 0
+    while i < n:
+        if freqs[i] < alert:
+            i += 1
+            continue
+        j = i
+        while j < n and freqs[j] >= alert:
+            j += 1
+        hot.append(f"M{i * cell_w:.1f},{height}")
+        k = i
+        while k < j:
+            m = k
+            while m < j and freqs[m] == freqs[k]:
+                m += 1
+            y = height - mismatch_level(freqs[k], floor, ceiling) * height
+            hot.append(f"L{k * cell_w:.1f},{y:.1f}")
+            hot.append(f"L{m * cell_w:.1f},{y:.1f}")
+            k = m
+        hot.append(f"L{j * cell_w:.1f},{height}")
+        hot.append("Z")
+        i = j
+    if hot:
+        parts.append(f'<path class="{prefix}-hot" d="{"".join(hot)}"/>')
+
     parts.append(f'<line class="{prefix}-base" x1="0" y1="{height}" '
                  f'x2="{width:.0f}" y2="{height}"/>')
     parts.append("</svg>")
     return "".join(parts)
 
 
-def track_style(plan: TrackPlan, prefix: str = "svf") -> str:
+def drawn_fill(color: str, theme: str = "light",
+               opacity: float = FEATURE_FILL_OPACITY) -> str:
+    """Return what *color* looks like once drawn at *opacity* over the ground.
+
+    A glyph is drawn part-transparent, so the colour a reader sees is not the
+    one in the file.  Anything choosing a colour to sit on top of it -- a label,
+    most of all -- has to be told the blend rather than the fill.
+    """
+    return _mix(color, _rgb(_GROUND[theme]), 1.0 - opacity)
+
+
+def track_style(prefix_or_plan=None, prefix: str = "svf",
+                plan: Optional[TrackPlan] = None) -> str:
     """CSS for the track's fills, both themes.
 
     A feature's colour comes from the file, so it is a literal rather than a
     theme token and cannot be swapped by redefining a custom property.  Emitting
     one rule per feature per theme is what keeps a colour chosen against white
     from disappearing on the dark ground.
+
+    Glyphs are filled at :data:`FEATURE_FILL_OPACITY` and their labels are
+    chosen against :func:`drawn_fill`, so a label is legible over the glyph as
+    drawn rather than over the fill as declared.
     """
+    if plan is None:
+        plan = prefix_or_plan
     seen = {}
     for glyph in plan.glyphs:
         seen[glyph.style_index] = glyph
@@ -635,13 +711,17 @@ def track_style(plan: TrackPlan, prefix: str = "svf") -> str:
     for index, glyph in sorted(seen.items()):
         light, dark = glyph.fill_light, glyph.fill_dark
         lines.append(
-            f".{prefix}{index}{{fill:{light};stroke:{outline_color(light)}}}"
-            f".{prefix}t{index}{{fill:{label_color(light)}}}"
+            f".{prefix}{index}{{fill:{light};"
+            f"fill-opacity:{FEATURE_FILL_OPACITY};"
+            f"stroke:{outline_color(light)}}}"
+            f".{prefix}t{index}"
+            f"{{fill:{label_color(drawn_fill(light, 'light'))}}}"
         )
         lines.append(
             f'[data-theme="dark"] .{prefix}{index}'
             f"{{fill:{dark};stroke:{outline_color(dark)}}}"
-            f'[data-theme="dark"] .{prefix}t{index}{{fill:{label_color(dark)}}}'
+            f'[data-theme="dark"] .{prefix}t{index}'
+            f"{{fill:{label_color(drawn_fill(dark, 'dark'))}}}"
         )
     return "\n".join(lines)
 
