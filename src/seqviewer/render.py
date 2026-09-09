@@ -453,7 +453,10 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
                 f'style="top:{annot_h + band_h}px;'
                 f'height:{_MISMATCH_TRACK_HEIGHT}px">'
                 + "".join(
-                    f'<span style="top:{y - 9:.1f}px">{_html.escape(label)}</span>'
+                    # Above the line, except at the top of the track, where
+                    # that would put it over the row above.
+                    f'<span style="top:{max(0.0, y - 9):.1f}px">'
+                    f"{_html.escape(label)}</span>"
                     for label, y in _mismatch_mark_offsets()
                 )
                 + "</div>"

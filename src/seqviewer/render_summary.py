@@ -74,6 +74,10 @@ ROW_LABELS = ("Mismatches", "Features", "Reads")
 LABEL_X = -34.0
 TICK_X = -6.0
 
+#: How far below the top of a track a label centred on its line has to sit
+#: before it stops hanging over the row above.  Half its own type size.
+TICK_INSET = 4.5
+
 #: Rates the disagreement track rules a line at.
 MISMATCH_MARKS = (0.10, 0.50)
 
@@ -386,8 +390,11 @@ def _mismatch_parts(group: GroupSummary, top: float) -> List[str]:
             f'<line class="sv-mm-rule" x1="0" y1="{y:.1f}" '
             f'x2="{WIDTH:.0f}" y2="{y:.1f}" />'
         )
+        # Centred on its line, except within half a glyph of the top of the
+        # track, where the label would hang over the row above.
         labels.append(
-            f'<text class="sv-mm-tick" x="{TICK_X:.0f}" y="{y:.1f}" '
+            f'<text class="sv-mm-tick" x="{TICK_X:.0f}" '
+            f'y="{max(y, top + TICK_INSET):.1f}" '
             f'text-anchor="end" '
             f'dominant-baseline="middle">{mark:.0%}</text>'
         )
@@ -733,8 +740,12 @@ html, body {{
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     margin: 0;
-    /* Room at the top for the fixed view toggle. */
-    padding: 3.7rem 1.5rem 1.5rem;
+}}
+/* The inset goes on body alone.  Setting it on both nests one inside the other
+   and the page starts at twice the intended distance from every edge. */
+body {{
+    /* Room at the top for the fixed view toggle, and no more. */
+    padding: 2.7rem 1.5rem 1.5rem;
 }}
 .sv-wrap {{ max-width: 760px; margin: 0 auto; }}
 h1 {{ font-size: 1.3rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }}
@@ -859,7 +870,8 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
 .sv-annot text {{ pointer-events: none; }}
 /* --- Views: fixed to the viewport, so the pair does not move between pages,
    and above the crossfade so it stays legible through it. --- */
-.sv-views-fixed {{ position: fixed; top: 1.5rem; left: 1.5rem; z-index: 25; }}
+.sv-views-fixed {{ position: fixed; top: 0.8rem; left: 1.5rem;
+    z-index: 25; }}
 /* The crossfade: the page's own background, drawn over the content.  It starts
    opaque and clears once the page has drawn, so a page is never seen filling in
    behind a fade that has already finished. */
