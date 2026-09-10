@@ -2,8 +2,8 @@
 
 The page draws an HTML5 canvas matrix: one row per read, one cell per reference
 position.  Matches are gray, mismatches take a per-base color, gaps are white.
-Above the reads sit a ruler and a consensus row; below them, when the view marks
-an insert, the reference and consensus translations of that insert.
+A ruler and a consensus row head the matrix.  Where the view marks an insert,
+the reference and consensus translations of that insert follow the reads.
 
 Nothing here touches the filesystem, a subprocess, or an aligner.  The input is
 a finished grid, so this module has no dependencies outside the standard library

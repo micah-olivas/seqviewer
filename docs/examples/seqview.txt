@@ -1,0 +1,7 @@
+usage: seqview <command> [options]
+
+commands:
+  pileup   align reads to a reference and write a pileup page
+  lengths  plot the read-length distribution in the terminal
+
+seqview <command> --help lists that command's options.

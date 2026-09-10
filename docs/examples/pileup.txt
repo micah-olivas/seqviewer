@@ -1,0 +1,8 @@
+CRNGS7_1_sample_1.fastq · 1 file · 5,422 reads
+Amplified_linear_vector · 3,549 bp linear · 10 features
+
+  reads      287 drawn of 300 sampled, longest first
+  coverage   3,549 of 3,549 positions (100%) · 23× mean depth
+  variants   none at ≥25% of covering reads and ≥2 supporting
+
+Wrote docs_demo.html · docs_demo.summary.html · docs_demo.log.txt

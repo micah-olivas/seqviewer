@@ -27,7 +27,8 @@ import html as _html
 from dataclasses import replace
 from typing import List, Optional, Sequence, Tuple
 
-from .annotate import TrackPlan, plan_track, track_style, track_svg
+from .annotate import (MISMATCH_TRACK_ALERT, MISMATCH_TRACK_MARKS, TrackPlan,
+                       plan_track, track_style, track_svg)
 from .summary import GroupSummary, SummaryView, Variant
 from .zoom import window_bounds, window_css, window_svg
 
@@ -78,13 +79,18 @@ TICK_X = -6.0
 #: before it stops hanging over the row above.  Half its own type size.
 TICK_INSET = 4.5
 
-#: Rates the disagreement track rules a line at.
-MISMATCH_MARKS = (0.10, 0.50)
-
-#: Rate at or above which a column is drawn as a finding rather than as noise.
-#: Below it the bar is muted: every position disagrees a little, and drawing all
-#: of it in the alert colour spends the reader's attention on the noise floor.
-MISMATCH_ALERT = 0.10
+#: Rates the disagreement track rules a line at, and the rate at or above which
+#: a column is drawn as a finding rather than as noise.  Below the alert the bar
+#: is muted: every position disagrees a little, and drawing all of it in the
+#: alert colour spends the reader's attention on the noise floor.
+#:
+#: Both come from the pileup's track rather than being restated here.  The two
+#: pages report the same statistic, so a reader who moves between them has to
+#: find the same threshold; when these were two numbers that happened to agree,
+#: changing one silently moved the other page's colour and left its key printing
+#: the number it no longer used.
+MISMATCH_MARKS = MISMATCH_TRACK_MARKS
+MISMATCH_ALERT = MISMATCH_TRACK_ALERT
 
 #: Separation between the reference ribbon and the coverage profile, so a group
 #: at full depth does not read as one thick bar.
@@ -258,9 +264,9 @@ def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int,
     """A filled coverage profile under the reference.
 
     Each pixel column reports the *thinnest* coverage it spans, not the mean, so
-    a dropout narrower than one pixel still shows as a notch.  On a page whose
-    job is to be trusted at a glance, a coverage hole that averages away is the
-    failure worth avoiding.
+    a dropout narrower than one pixel still shows as a notch.  A coverage hole
+    that averages away is the failure this page has to avoid, since a reader
+    who does not open the pileup will never see it.
 
     The height is logarithmic.  A run where one region draws many times the
     reads of the rest is common -- primer dimer and truncated product both do
@@ -1079,9 +1085,9 @@ def _thresholds(view: SummaryView) -> str:
                  "position the reads disagree about in several directions is "
                  "reported at the total. A deletion counts as disagreement; an "
                  "uncovered position is not counted."),
-        ("Bar colour", f"Muted below {MISMATCH_ALERT:.0%}, which is where every "
-                       "position sits from sequencing error alone. Coloured at "
-                       "or above it."),
+        ("Bar colour", f"Muted below {MISMATCH_ALERT:.0%}. Sequencing error alone "
+                       "puts every position near that rate, so only bars at "
+                       "or above it are coloured."),
         ("Bar height", "The worst position in each pixel column, not the mean. "
                        "Over a reference of several kilobases a column spans "
                        "several bases, and the mean of one disagreeing base "

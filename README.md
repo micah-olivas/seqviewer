@@ -1,6 +1,8 @@
 # seqviewer
 
-Viewers for sequencing alignments.
+Lightweight tools for working with sequencing files.
+`docs/index.html` is the documentation page, generated from the package by
+`python docs/build.py`; it carries every flag of every command.
 
 ## Install
 
@@ -87,9 +89,10 @@ from seqviewer import SummaryView, render_summary
 Path("summary.html").write_text(render_summary(SummaryView.from_view(view)))
 ```
 
-Glyph shape carries the kind of change — substitution, deletion, insertion — and
-color carries the consequence: frameshift or premature stop, missense or in-frame
-indel, silent, or outside the reading frame.
+Each called position is marked once, at one size whatever the frequency, and
+coloured by consequence: frameshift or premature stop, missense or in-frame
+indel, silent, or outside the reading frame. Hovering a mark reports the
+position, the change, the reads supporting it, and its effect.
 Each called variant also gets a base-resolution window, drawn as one letter per
 base with each codon bracketed under the three bases it is translated from.
 
@@ -152,9 +155,9 @@ is a 70 MB page — too large to open, and no more readable for holding every
 read. `--max` moves the number and `--max 0` draws all of them. The sample is
 seeded, so the same directory gives the same page twice.
 
-`--summary` writes the summarized page beside the pileup, named from its stem:
-`pileup.html` and `pileup.summary.html`. `--variant-freq` and `--variant-reads`
-move the two calling floors. The log written beside the page records which
+Both pages are written, named from the same stem: `pileup.html` and
+`pileup.summary.html`. `--no-summary` writes only the pileup. `--variant-freq`
+and `--variant-reads` move the two calling floors. The log written beside the page records which
 thresholds produced it and what was called.
 
 Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
@@ -165,7 +168,7 @@ subpopulation that the cheaper `mismatch` ordering splits when a read carries an
 unrelated error further left. `--help` lists the rest.
 
 A track above the reference shows, per position, the share of covering reads
-that disagree with it, on a log scale marked at 1% and 10%. A deletion counts as
+that disagree with it, on a linear scale marked at 10% and 50%. A deletion counts as
 disagreement, so a column half the reads have deleted reads as half disagreeing
 rather than as clean. `seqviewer.summary.mismatch_fractions` is the one
 definition of that number, and both pages read it.
