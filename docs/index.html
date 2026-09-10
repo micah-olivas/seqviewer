@@ -71,27 +71,21 @@ p { margin: 0 0 0.95rem; max-width: 38rem; }
 
 /* --- a command and what it printed --- */
 .run { margin: 1.1rem 0 1.2rem; min-width: 0; }
+/* Nothing here wraps.  A command and its output are both fixed-pitch, and a
+   line folded at the window edge reads as two: the histogram stops being a
+   histogram, and a wrapped command stops being one you can copy by eye.  Each
+   block is bounded by its column and scrolls sideways within it. */
 .run pre {
   font: 0.78rem/1.55 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
         monospace;
   margin: 0; padding: 0.7rem 0.9rem;
+  white-space: pre; overflow-x: auto; overscroll-behavior-x: contain;
 }
-/* A command is a line of text and wraps like one, with its continuations
-   indented so the wrap is not read as a second command.  Output does not
-   wrap: it is fixed-pitch, and a histogram folded at the window edge is no
-   longer a histogram, so that one scrolls instead. */
-.run .cmd {
-  background: var(--panel); color: var(--ink);
-  border: 1px solid var(--rule);
-  white-space: pre-wrap; overflow-wrap: anywhere;
-  padding-left: 2.4rem; text-indent: -1.5rem;
-}
+.run .cmd { background: var(--panel); color: var(--ink);
+            border: 1px solid var(--rule); }
 .run .cmd b { font-weight: 600; color: var(--accent); }
-.run .out {
-  background: var(--term-bg); color: var(--term-ink);
-  border: 1px solid var(--rule); border-top: none;
-  white-space: pre; overflow-x: auto;
-}
+.run .out { background: var(--term-bg); color: var(--term-ink);
+            border: 1px solid var(--rule); border-top: none; }
 
 figure { margin: 1.2rem 0; }
 figure img { display: block; width: 100%; height: auto;
@@ -173,7 +167,7 @@ ul.plain li { margin-bottom: 0.22rem; }
     scan a large FASTQ, and <code>plot</code> adds matplotlib for figure
     output.</p>
     <div class="run">
-      <pre class="cmd">$ <b>uv tool install</b> --python 3.13     'seqviewer[cli,fast,plot] @ git+https://github.com/micah-olivas/seqviewer'</pre>
+      <pre class="cmd">$ <b>uv tool install</b> --python 3.13 'seqviewer[cli,fast,plot] @ git+https://github.com/micah-olivas/seqviewer'</pre>
     </div>
     <p>One entry point carries the commands.</p>
     <div class="run">
