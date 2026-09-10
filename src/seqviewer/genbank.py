@@ -5,14 +5,14 @@ pileup wants to draw over its reference bar.  Biopython does the parsing; this
 module's work is turning its objects into the package's own flat ``Feature``
 records, which means three things Biopython will not do for you:
 
-* deciding whether a multi-part location genuinely crosses the origin, which
+* deciding whether a multi-part location crosses the origin, which
   ``len(location.parts) > 1`` gets wrong for any spliced feature,
 * picking one label out of a handful of competing qualifiers, and
 * recovering the colour a human chose in SnapGene or ApE, which each tool
   stores in a different place and one of them hides inside ``/note``.
 
-Biopython is imported inside the loader, so importing this module — or the
-package — never requires it.  Only annotated formats do.
+Biopython is imported inside the loader, so importing this module, or the
+package, never requires it.  Only annotated formats do.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _ANNOTATED = {
 #: ``source`` spans the whole record, so it neighbours everything and costs a
 #: lane to say nothing.  ``primer_bind`` is the flood risk: a SnapGene-annotated
 #: vector carries many of them, each a few dozen pixels wide and each with a
-#: label far wider than itself.  ``gene`` is handled separately — it is dropped
+#: label far wider than itself.  ``gene`` is handled separately: it is dropped
 #: only where a CDS already covers the same span, because a record that
 #: annotates genes and no CDS still needs its open reading frames.
 DEFAULT_SKIP_TYPES = frozenset({"source", "primer_bind"})
@@ -59,7 +59,7 @@ _NOTE_IS_MARKUP = re.compile(
     re.IGNORECASE,
 )
 
-#: ``/note="color: #ffd281; direction: BOTH"`` — SnapGene's convention.
+#: ``/note="color: #ffd281; direction: BOTH"``, SnapGene's convention.
 _NOTE_COLOR = re.compile(r"\bcolor\s*:\s*(#[0-9a-fA-F]{3,6}|[a-zA-Z]+)")
 
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -128,7 +128,7 @@ def _feature_label(qualifiers: Dict[str, Sequence[str]], fallback: str) -> str:
 
 
 def _wraps_origin(location, seq_len: int, circular: bool) -> bool:
-    """Decide whether *location* genuinely crosses base 1.
+    """Decide whether *location* crosses base 1.
 
     ``len(location.parts) > 1`` is not that test: a spliced CDS such as
     ``join(20..25,35..45)`` has two parts and stays put.  A feature crosses the
@@ -147,7 +147,7 @@ def _wrapped_bounds(location) -> Tuple[int, int]:
 
     ``start > end`` on purpose.  Biopython's ``CompoundLocation.start``/``.end``
     give the min and max over the parts, which for a wrapping feature is the
-    whole sequence — the hull says nothing about the real extent.  Encoding the
+    whole sequence, and the hull says nothing about the real extent.  Encoding the
     5' piece's start and the 3' piece's end keeps it, and a reader that sees
     ``start > end`` knows to draw two spans.
 

@@ -1,17 +1,17 @@
 """Reduce a pileup to the few numbers a one-glance map draws.
 
 The pileup viewer answers "what does every read say".  This module answers the
-other question — "what does this alignment say, in total" — by collapsing a grid
+other question, "what does this alignment say, in total", by collapsing a grid
 of reads into three per-position arrays and a list of called variants.  Nothing
 here draws anything; :mod:`seqviewer.render_summary` consumes what this produces.
 
-The reduction is deliberately the whole of the statistics.  A renderer that
+The reduction holds all of the statistics.  A renderer that
 recomputed disagreement per column would be a second implementation of the same
 number, which is how a legend comes to disagree with the cells it describes.
 
 Two properties of the grid shape what can be recovered from it:
 
-**Deletions and uncovered positions are the same cell.**
+Deletions and uncovered positions are the same cell
     :func:`seqviewer.align._row_for` starts every row as ``("-", True)`` and
     writes ``("-", True)`` for a deletion, so the two are byte-identical.  They
     are separated here by position rather than by content: a run of ``"-"``
@@ -21,13 +21,13 @@ Two properties of the grid shape what can be recovered from it:
     only ever writes where ``get_aligned_pairs`` reports.  Soft-clip or
     supplementary-alignment handling in ``align`` would break it.
 
-**Insertions are not in the grid at all.**
+Insertions are not in the grid at all
     An inserted base has no reference position, and ``_row_for`` drops it.  A
     row is exactly ``len(ref_seq)`` wide by construction, so there is nowhere to
     put one.  :class:`Variant` therefore models ``kind="ins"`` and
     :func:`summarize_group` accepts an *insertions* sidecar, but a plain grid
-    supplies none and a summary of one reports no insertions — which is the
-    honest answer, not the absence of any.
+    supplies none and a summary of one reports no insertions, which is the
+    honest answer rather than a claim that there are none.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ __all__ = [
 #: Higher than the 10% the pileup page flags columns at, and deliberately so:
 #: flagging marks a column worth a human's eye, while calling asserts a variant
 #: is really there.  At the shallow depths these pages are made for, 10% is one
-#: read — on a 2% per-base error rate over 10 reads that fires on hundreds of
+#: read: on a 2% per-base error rate over 10 reads that fires on hundreds of
 #: columns, which buries the one mutation that matters.
 DEFAULT_MIN_FRACTION = 0.25
 
@@ -96,8 +96,8 @@ class Variant:
     ``count`` is the reads supporting it and ``depth`` the reads covering the
     position, both counted over the group this variant was called in.
 
-    ``consequence`` is the machine-readable classification — one of
-    :data:`SEVERITY`, or ``""`` when no reading frame was known — and ``effect``
+    ``consequence`` is the machine-readable classification (one of
+    :data:`SEVERITY`, or ``""`` when no reading frame was known) and ``effect``
     is its human form, ``"T40N"`` or ``"Δ1 aa at 151"``.  Styling reads the
     former; only display reads the latter.
     """
@@ -156,7 +156,7 @@ class GroupSummary:
     fraction: float = 0.0
     rows_drawn: int = 0
     highlighted: bool = False
-    #: Whatever the caller's pipeline called this group.  Display only — the
+    #: Whatever the caller's pipeline called this group.  Display only; the
     #: verdict below is computed, so a page never styles on free text.
     status: str = ""
 
@@ -292,7 +292,7 @@ def summarize_group(
             for insertions the grid cannot carry.  A grid alone supplies none.
 
     Returns:
-        The reduction.  Variants come back unclassified — assigning a
+        The reduction.  Variants come back unclassified, since assigning a
         consequence needs a reading frame, which belongs to the view, so
         :meth:`SummaryView.from_view` is what fills ``consequence`` and
         ``effect`` in.
@@ -376,7 +376,7 @@ def mismatch_counts(rows: Sequence[Row], ref_seq: str) -> List[Tuple[int, int]]:
 
     The one definition of disagreement in the package.  Both the pileup's track
     and this module's calls read it, so they cannot report different numbers for
-    the same column — which they did while each computed its own.
+    the same column, which they did while each computed its own.
 
     Counts rather than a ratio, because a ratio cannot be reported honestly on
     its own: 1 of 3 reads and 100 of 300 are both 33%, and only the first is
@@ -385,12 +385,12 @@ def mismatch_counts(rows: Sequence[Row], ref_seq: str) -> List[Tuple[int, int]]:
 
     Two choices in it, both load-bearing:
 
-    * **A deletion is disagreement.** Counting only called bases makes a column
-      where half the reads deleted the base read as perfectly clean, because the
+    * A deletion counts as disagreement.  Counting only called bases makes a
+      column where half the reads deleted the base read as clean, because the
       deleted reads leave both the numerator and the denominator.
-    * **The denominator is reads that reached the position**, not every read in
-      the group, so a position at the edge of a short read's span is not diluted
-      by reads that never covered it.
+    * The denominator is reads that reached the position rather than every
+      read in the group, so a position at the edge of a short read's span is
+      not diluted by reads that never covered it.
 
     Absence of coverage is neither: a ``"-"`` outside a read's own covered span
     contributes to nothing.  Separating that from a deletion is what
@@ -510,7 +510,7 @@ class SummaryView:
     features: List[Feature] = field(default_factory=list)
     theme: Theme = field(default_factory=Theme)
     #: The view this was reduced from, when there was one.  A reference to it, not
-    #: a copy — kept because base-resolution detail needs the reads themselves,
+    #: a copy, kept because base-resolution detail needs the reads themselves,
     #: which a reduction deliberately does not carry.  None when a summary was
     #: assembled directly, and then a page draws no such detail.
     source: Optional[PileupView] = None
@@ -544,8 +544,8 @@ class SummaryView:
         *insertions* is keyed by group name, so a caller holding sidecar
         evidence can pass it for the groups it has it for and omit the rest.
 
-        Groups may be stated against references of different lengths — the
-        pileup view allows it — so the longest is taken as the page's coordinate
+        Groups may be stated against references of different lengths, which the
+        pileup view allows, so the longest is taken as the page's coordinate
         system and shorter groups simply stop early.
         """
         if not view.groups:

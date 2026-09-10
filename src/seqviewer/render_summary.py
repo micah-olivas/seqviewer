@@ -1,18 +1,20 @@
 """Render a summarized pileup as a self-contained HTML page.
 
 Where the pileup page draws every read as a row of pixels, this one draws what
-the reads add up to: an annotated map of the construct, and under it one compact
-band per subpopulation — a reference ribbon, a lollipop per called variant, and
-a coverage profile — followed by the variants as a table.  A page that took a
-scroll and a squint becomes a few centimetres you can take in at once.
+the reads add up to.  Each group is three bands: how far the reads disagree with
+the reference at each position, an annotated map of the construct, and the
+coverage profile.  Called positions are marked on the map, and the stretches
+disagreeing at or above the alert rate are listed whether or not a variant was
+called in them.  A page that took a scroll and a squint becomes a few
+centimetres.
 
-The drawing is **SVG generated in Python**, not canvas, for the same reasons
+The drawing is SVG generated in Python, not canvas, for the same reasons
 :mod:`seqviewer.annotate` is: a summary is a few dozen outlined shapes with text
 in them rather than a pixel matrix.  SVG buys crisp strokes at any pixel ratio,
 real text, native tooltips from ``<title>``, and per-theme fills from CSS.  It
 also means the page carries no JavaScript data payload at all, so free-text
-feature labels never reach a ``<script>`` block — a class of escaping bug this
-page simply does not have.
+feature labels never reach a ``<script>`` block, which is a class of escaping
+bug this page does not have.
 
 The feature track is not drawn here.  :mod:`seqviewer.annotate` owns feature
 geometry for the whole package; this module calls it with ``max_lanes`` turned
@@ -546,8 +548,8 @@ def _run_label(group: GroupSummary, run: Tuple[int, int, float]) -> str:
 def _call_count(group: GroupSummary, runs: Sequence) -> str:
     """The line on the collapsed detail, and the only statement of the count.
 
-    A long list is not drawn in full — each window costs a hundred columns of
-    reads — so the line says how many stretches are below it.
+    A long list is not drawn in full, since each window costs a hundred
+    columns of reads, so the line says how many stretches are below it.
     """
     if not runs:
         return f"No position disagrees at {MISMATCH_ALERT:.0%} or more"
@@ -702,8 +704,9 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
     THE SEAM.  Everything specific to being an HTML page rather than a drawing
     lives in this one function: the document skeleton, the reset, the palette
     emission, and the light/dark bridge that reads the host application's stored
-    preference.  None of it is particular to a summary — the pileup page builds
-    the same shell inside its own f-string — so when that markup is extracted
+    preference.  None of it is particular to a summary, since the pileup page
+    builds the same shell inside its own f-string, so when that markup is
+    extracted
     into a shared asset this function is what gets replaced, and nothing above
     it has to change.
     """
@@ -796,7 +799,7 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
     display: block; width: 100%; height: auto; overflow: visible;
     /* A viewBox scales the type along with the drawing, so past a point the
        whole thing shrinks into illegibility. Below this the drawing keeps its
-       size and its container scrolls instead — measured: at a 420px viewport an
+       size and its container scrolls instead.  Measured: at a 420px viewport an
        unfloored annotation track renders 6px tall. */
     min-width: {MIN_DRAW_WIDTH}px;
 }}

@@ -9,15 +9,15 @@ the three bases it is translated from.
 Why a window rather than a zoom of the whole reference: a canvas is capped near
 32,767 pixels a side and the pileup multiplies by ``devicePixelRatio``, so at
 retina density and twelve pixels a base the drawing fails silently somewhere
-around 1,400 bases.  Bounding the window sidesteps the ceiling entirely — this
-draws the same size box whatever the reference length — and, being SVG, it has no
-pixel ceiling to begin with.
+around 1,400 bases.  Bounding the window sidesteps the ceiling entirely, since
+this draws the same size box whatever the reference length, and, being SVG, it
+has no pixel ceiling to begin with.
 
-The register rule is the whole point of the module, so it is stated once here and
-tested directly: a codon of the reading frame starting at *frame_start* occupies
+The register rule is what this module exists to hold, so it is stated once here
+and tested directly: a codon of the reading frame starting at *frame_start* occupies
 exactly ``3 * CELL_W`` pixels, beginning at a base whose offset from
 *frame_start* is divisible by three.  Nothing rounds, and no minimum width is
-imposed on a codon — imposing one is what put the pileup's own amino-acid track
+imposed on a codon; imposing one is what put the pileup's own amino-acid track
 out of register with the bases it describes.
 
 Everything here is pure geometry over a grid, so it is testable without a

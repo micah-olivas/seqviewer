@@ -1,6 +1,6 @@
 """Lay annotations out over the reference bar and draw them as SVG.
 
-The pileup itself is a pixel matrix — one rect per base per read — and canvas is
+The pileup itself is a pixel matrix, one rect per base per read, and canvas is
 the right tool for that.  Feature glyphs are the opposite kind of drawing: a few
 dozen outlined shapes with text in them, wanted crisp at any pixel ratio and
 hoverable.  So this track is SVG, which buys real strokes, real text metrics,
@@ -63,7 +63,7 @@ _LABEL_OUTSET = 5
 #: degrades to a triangle rather than growing a head wider than its body.
 _MAX_HEAD = 6
 
-#: Fallback fills for files that carry no colour of their own — NCBI records
+#: Fallback fills for files that carry no colour of their own.  NCBI records
 #: usually don't.  A file's own colour always wins over these.
 FEATURE_PALETTE: Dict[str, Tuple[str, str]] = {
     "cds": ("#c9a227", "#d9b84a"),
@@ -154,7 +154,7 @@ def _for_dark(color: str) -> str:
 
     A colour chosen in SnapGene was chosen against white.  Deep navy on a deep
     navy page is invisible, so anything below the floor is mixed toward white
-    until it reads — while keeping its hue, which is the point of honouring the
+    until it reads, while keeping its hue, which is the point of honouring the
     file at all.
     """
     if _luminance(color) >= 0.38:
@@ -170,8 +170,8 @@ def label_color(color: str) -> str:
 def feature_colors(feature: Feature) -> Tuple[str, str]:
     """Return ``(light, dark)`` fills for *feature*.
 
-    A colour the file carried always wins — that is the user's own choice, made
-    in SnapGene or ApE — and a feature with none falls back on its type.  The
+    A colour the file carried always wins, being the user's own choice made in
+    SnapGene or ApE, and a feature with none falls back on its type.  The
     dark value is lifted where a colour chosen against white would disappear
     against the dark ground, keeping its hue.
 
@@ -191,7 +191,7 @@ class Glyph:
     x: float
     width: float
     lane: int
-    #: False on an edge that is a cut rather than the feature's real end — the
+    #: False on an edge that is a cut rather than the feature's real end: the
     #: second piece of an origin-crossing feature, or a clip to the reference.
     head_start: bool
     head_end: bool
@@ -406,7 +406,7 @@ def _place_labels(glyphs: List[Glyph], width: float) -> None:
     A label inside the glyph is the best outcome and the one a plasmid map leads
     with.  Failing that it sits just after the glyph, but only in the gap before
     the next thing in that lane, so labels never collide.  Anything narrower than
-    that keeps its tooltip and no visible text — three characters and an ellipsis
+    that keeps its tooltip and no visible text.  Three characters and an ellipsis
     tells a reader less than the hover does.
     """
     by_lane: Dict[int, List[Glyph]] = {}

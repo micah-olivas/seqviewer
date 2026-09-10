@@ -11,7 +11,7 @@ A page draws a few hundred reads by default, sampled from across the whole of
 every file.  A deep run drawn whole is a page too large to open, and the reads
 at the front of one file are not the run; ``--max 0`` draws all of them anyway.
 
-Reading the reference is :mod:`seqviewer.genbank`'s job — FASTA, GenBank, ApE,
+Reading the reference is :mod:`seqviewer.genbank`'s job: FASTA, GenBank, ApE,
 and SnapGene all arrive as a ``Reference`` with its topology and features.  What
 is left here is the part the package does not cover: reading a FASTQ, and the
 two adjustments a plasmid needs.  A circular reference is aligned against a
@@ -130,7 +130,7 @@ def downsample(reads, k, seed=SAMPLE_SEED):
     The reads are a stream of unknown length, so this is reservoir sampling: it
     holds only the k it keeps and makes one pass, which is what lets a run of any
     depth be capped without reading it into memory first.  Sampling rather than
-    truncating matters for a directory — the first k reads of a pool are the
+    truncating matters for a directory: the first k reads of a pool are the
     first file's reads, and a page drawn from those is a page of one barcode.
 
     Every read is kept when there are no more than k of them, and the order the
