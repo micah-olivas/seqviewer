@@ -29,6 +29,7 @@ from .summary import mismatch_counts as _mismatch_counts
 from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
 from .codon import translate as _translate
 from .pileup import PileupView
+from .plate import plate_svg
 
 __all__ = ["render"]
 
@@ -205,6 +206,13 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
             '<span class="sv-view" aria-current="page">Pileup</span>'
             "</div></div>"
         )
+    # The plate map takes the opposite corner from the view toggle, fixed the
+    # same way, so the two pages agree about where a reader finds it.
+    plate_corner = ""
+    if view.well is not None:
+        plate_corner = (f'<div class="sv-plate-fixed">'
+                        f"{plate_svg(view.well, 'sv')}</div>")
+    body_class = ' class="sv-plated"' if view.well is not None else ""
 
     _theme = view.theme
     _p = _theme.css_prefix
@@ -651,8 +659,8 @@ var SV_PALETTE = {palette_js};
 {pileup_js}
 </script>
 </head>
-<body>
-{summary_link}<div class="sv-fade"></div>
+<body{body_class}>
+{summary_link}{plate_corner}<div class="sv-fade"></div>
 <noscript><style>.sv-fade {{ display: none; }}</style></noscript>
 <div class="sv-panel">
     <div class="sv-panel-id">

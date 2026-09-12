@@ -170,6 +170,26 @@ body {
     left: 1.5rem;
     z-index: 25;
 }
+/* --- Plate map: the opposite corner, fixed the same way.  The body makes
+   room for it below, since it is taller than the toggle. --- */
+.sv-plate-fixed {
+    position: fixed;
+    top: 0.8rem;
+    right: 1.5rem;
+    z-index: 25;
+    line-height: 0;
+}
+body.sv-plated { padding-top: 5.6rem; }
+.sv-plate { display: block; }
+.sv-plate-frame { fill: var(--card-bg); stroke: var(--panel-line); stroke-width: 1; }
+/* Filled, not outlined: at 384 pitch an outline is under a pixel wide and the
+   grid vanishes, leaving a box with one dot that reads as no plate at all. */
+.sv-plate-well { fill: var(--panel-line); stroke: none; }
+.sv-plate-here { fill: var(--text); }
+.sv-plate-label {
+    font: 600 8px var(--mono);
+    fill: var(--text);
+}
 /* The crossfade: the page's own background, drawn over the content.  It starts
    opaque and clears once the page reports it has drawn, so the reader never
    sees a page fill in behind a fade that has already finished. */

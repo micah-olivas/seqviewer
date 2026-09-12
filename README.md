@@ -165,7 +165,10 @@ what draws the boundary lines, the translation rows, and the frame that variants
 are classified against. `--order` sets the row order; `cluster` is hierarchical,
 average linkage over what each read disagrees about, which groups a
 subpopulation that the cheaper `mismatch` ordering splits when a read carries an
-unrelated error further left. `--help` lists the rest.
+unrelated error further left. `--well B7` names the sample's position on its
+plate, and both pages then carry a plate map in the upper right with that well
+filled; the format is inferred from the well (past row H or column 12 is 384)
+or set with `--plate`. `--help` lists the rest.
 
 A track above the reference shows, per position, the share of covering reads
 that disagree with it, on a linear scale marked at 10% and 50%. A deletion counts as

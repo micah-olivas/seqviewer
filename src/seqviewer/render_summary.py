@@ -31,6 +31,7 @@ from typing import List, Optional, Sequence, Tuple
 
 from .annotate import (MISMATCH_TRACK_ALERT, MISMATCH_TRACK_MARKS, TrackPlan,
                        plan_track, track_style, track_svg)
+from .plate import Well, plate_svg
 from .summary import GroupSummary, SummaryView, Variant
 from .zoom import window_bounds, window_css, window_svg
 
@@ -721,6 +722,8 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
         + ["}"]
     )
 
+    # The body makes room under the plate map, which is taller than the toggle.
+    body_class = ' class="sv-plated"' if view.well is not None else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -881,6 +884,17 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
    and above the crossfade so it stays legible through it. --- */
 .sv-views-fixed {{ position: fixed; top: 0.8rem; left: 1.5rem;
     z-index: 25; }}
+/* --- Plate map: the opposite corner, fixed the same way. --- */
+.sv-plate-fixed {{ position: fixed; top: 0.8rem; right: 1.5rem; z-index: 25;
+    line-height: 0; }}
+body.sv-plated {{ padding-top: 5.6rem; }}
+.sv-plate {{ display: block; }}
+.sv-plate-frame {{ fill: var(--{prefix}-bg); stroke: var(--{prefix}-grid);
+    stroke-width: 1; }}
+.sv-plate-well {{ fill: var(--{prefix}-grid); stroke: none; }}
+.sv-plate-here {{ fill: var(--{prefix}-tick-label); }}
+.sv-plate-label {{ font: 600 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+    fill: var(--{prefix}-tick-label); }}
 /* The crossfade: the page's own background, drawn over the content.  It starts
    opaque and clears once the page has drawn, so a page is never seen filling in
    behind a fade that has already finished. */
@@ -972,7 +986,7 @@ html.sv-leaving .sv-fade {{ opacity: 1; transition: opacity 90ms ease-in; }}
 {track_css}
 </style>
 </head>
-<body>
+<body{body_class}>
 <div class="sv-fade"></div>
 <div class="sv-tip" role="tooltip" aria-hidden="true"></div>
 <noscript><style>.sv-fade {{ display: none; }}</style></noscript>
@@ -1156,6 +1170,13 @@ def _banner(counterpart: Optional[str]) -> str:
             f"{current}{other}</div></div>")
 
 
+def _plate_corner(well: Optional[Well]) -> str:
+    """The plate map, fixed to the corner opposite the view toggle."""
+    if well is None:
+        return ""
+    return f'<div class="sv-plate-fixed">{plate_svg(well, "sv")}</div>'
+
+
 def render_summary(view: SummaryView, max_lanes: int = 2,
                    pileup_href: Optional[str] = None) -> str:
     """Render *view* to a complete HTML document and return it as a string.
@@ -1207,7 +1228,7 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
 
     # No heading: the group's own line carries its name, its reads and its
     # depth, and the document title names the reference for a bookmark or a tab.
-    head = f"{_banner(pileup_href)}{highlighted}{dropped}"
+    head = f"{_banner(pileup_href)}{_plate_corner(view.well)}{highlighted}{dropped}"
 
     # The reference is drawn once and placed between each group's disagreement
     # track and its reads, so the coordinate both are read against sits between

@@ -347,6 +347,10 @@ Wrote docs_demo.html · docs_demo.summary.html · docs_demo.log.txt</pre>
       <dd>reads that must support a variant whatever the share (default 2). At shallow depth a single read is the error rate, not a variant; no effect under --no-summary</dd>
       <dt><code>--title</code> <span class="arg">TITLE</span></dt>
       <dd>page heading, replacing the default 'Pileup: &lt;reference name&gt;'</dd>
+      <dt><code>--well</code> <span class="arg">WELL</span></dt>
+      <dd>where this sample sits on its plate, such as A1 or P24. Both pages then carry a plate map in the upper right with that well filled</dd>
+      <dt><code>--plate</code> <span class="arg">{96,384}</span></dt>
+      <dd>the plate format the well is read against. Inferred from the well when not given: past row H or column 12 is 384, and otherwise 96</dd>
       </dl>
     </div>
   </div>
@@ -372,7 +376,7 @@ Wrote docs_demo.html · docs_demo.summary.html · docs_demo.log.txt</pre>
   </div>
 </section>
 
-<p class="stamp">seqviewer 0.1.0. Built from the package by docs/build.py on 2026-09-10.</p>
+<p class="stamp">seqviewer 0.1.0. Built from the package by docs/build.py on 2026-09-11.</p>
 
 </main>
 </body>

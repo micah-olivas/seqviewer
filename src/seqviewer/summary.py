@@ -40,6 +40,7 @@ from .codon import translate_codon
 from .construct import Feature
 from .grid import Row
 from .pileup import PileupGroup, PileupView
+from .plate import Well
 from .theme import Theme
 
 __all__ = [
@@ -519,6 +520,9 @@ class SummaryView:
     #: caller may have overridden.
     min_fraction: float = DEFAULT_MIN_FRACTION
     min_count: int = DEFAULT_MIN_COUNT
+    #: The sample's well, carried from the pileup so both pages draw the same
+    #: plate map.  None when the run was not from a plate, or nobody said.
+    well: Optional[Well] = None
     min_depth: int = DEFAULT_MIN_DEPTH
 
     @property
@@ -592,4 +596,5 @@ class SummaryView:
             min_fraction=min_fraction,
             min_count=min_count,
             min_depth=min_depth,
+            well=view.well,
         )

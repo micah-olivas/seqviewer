@@ -55,6 +55,7 @@ from .align import Read, grid_from_reads
 from .cluster import cluster_rows
 from .genbank import load_reference
 from .pileup import PileupGroup, PileupView
+from .plate import FORMATS, parse_well
 from .render import render
 from .render_summary import render_summary
 from .summary import DEFAULT_MIN_COUNT, DEFAULT_MIN_FRACTION, SummaryView
@@ -399,12 +400,31 @@ def build_parser(prog=None):
     parser.add_argument("--title",
                         help="page heading, replacing the default "
                              "'Pileup: <reference name>'")
+    parser.add_argument("--well", metavar="WELL",
+                        help="where this sample sits on its plate, such as A1 "
+                             "or P24. Both pages then carry a plate map in the "
+                             "upper right with that well filled")
+    parser.add_argument("--plate", type=int, choices=sorted(FORMATS),
+                        help="the plate format the well is read against. "
+                             "Inferred from the well when not given: past row "
+                             "H or column 12 is 384, and otherwise 96")
     return parser
 
 
 def main(argv=None, prog=None):
     parser = build_parser(prog)
     args = parser.parse_args(argv)
+
+    # Read before any file is opened, so a mistyped well fails in the time it
+    # takes to read the flag rather than after the alignment.
+    well = None
+    if args.well:
+        try:
+            well = parse_well(args.well, args.plate)
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.plate:
+        parser.error("--plate names a format for --well; give the well too")
 
     log_lines = []
 
@@ -512,6 +532,7 @@ def main(argv=None, prog=None):
         flanks=focus_flanks(reference, args.insert),
         features=reference.features,
         ref_len=len(reference),
+        well=well,
     )
     if view.flanks:
         log(dim(f"  flanks from --insert: {view.flanks}"))
