@@ -1,18 +1,20 @@
 """Render a summarized pileup as a self-contained HTML page.
 
 Where the pileup page draws every read as a row of pixels, this one draws what
-the reads add up to: an annotated map of the construct, and under it one compact
-band per subpopulation — a reference ribbon, a lollipop per called variant, and
-a coverage profile — followed by the variants as a table.  A page that took a
-scroll and a squint becomes a few centimetres you can take in at once.
+the reads add up to.  Each group is three bands: how far the reads disagree with
+the reference at each position, an annotated map of the construct, and the
+coverage profile.  Called positions are marked on the map, and the stretches
+disagreeing at or above the alert rate are listed whether or not a variant was
+called in them.  A page that took a scroll and a squint becomes a few
+centimetres.
 
-The drawing is **SVG generated in Python**, not canvas, for the same reasons
+The drawing is SVG generated in Python, not canvas, for the same reasons
 :mod:`seqviewer.annotate` is: a summary is a few dozen outlined shapes with text
 in them rather than a pixel matrix.  SVG buys crisp strokes at any pixel ratio,
 real text, native tooltips from ``<title>``, and per-theme fills from CSS.  It
 also means the page carries no JavaScript data payload at all, so free-text
-feature labels never reach a ``<script>`` block — a class of escaping bug this
-page simply does not have.
+feature labels never reach a ``<script>`` block, which is a class of escaping
+bug this page does not have.
 
 The feature track is not drawn here.  :mod:`seqviewer.annotate` owns feature
 geometry for the whole package; this module calls it with ``max_lanes`` turned
@@ -27,7 +29,9 @@ import html as _html
 from dataclasses import replace
 from typing import List, Optional, Sequence, Tuple
 
-from .annotate import TrackPlan, plan_track, track_style, track_svg
+from .annotate import (MISMATCH_TRACK_ALERT, MISMATCH_TRACK_MARKS, TrackPlan,
+                       plan_track, track_style, track_svg)
+from .plate import Well, plate_svg
 from .summary import GroupSummary, SummaryView, Variant
 from .zoom import window_bounds, window_css, window_svg
 
@@ -78,13 +82,18 @@ TICK_X = -6.0
 #: before it stops hanging over the row above.  Half its own type size.
 TICK_INSET = 4.5
 
-#: Rates the disagreement track rules a line at.
-MISMATCH_MARKS = (0.10, 0.50)
-
-#: Rate at or above which a column is drawn as a finding rather than as noise.
-#: Below it the bar is muted: every position disagrees a little, and drawing all
-#: of it in the alert colour spends the reader's attention on the noise floor.
-MISMATCH_ALERT = 0.10
+#: Rates the disagreement track rules a line at, and the rate at or above which
+#: a column is drawn as a finding rather than as noise.  Below the alert the bar
+#: is muted: every position disagrees a little, and drawing all of it in the
+#: alert colour spends the reader's attention on the noise floor.
+#:
+#: Both come from the pileup's track rather than being restated here.  The two
+#: pages report the same statistic, so a reader who moves between them has to
+#: find the same threshold; when these were two numbers that happened to agree,
+#: changing one silently moved the other page's colour and left its key printing
+#: the number it no longer used.
+MISMATCH_MARKS = MISMATCH_TRACK_MARKS
+MISMATCH_ALERT = MISMATCH_TRACK_ALERT
 
 #: Separation between the reference ribbon and the coverage profile, so a group
 #: at full depth does not read as one thick bar.
@@ -258,9 +267,9 @@ def _depth_parts(group: GroupSummary, cell_w: float, ceiling: int,
     """A filled coverage profile under the reference.
 
     Each pixel column reports the *thinnest* coverage it spans, not the mean, so
-    a dropout narrower than one pixel still shows as a notch.  On a page whose
-    job is to be trusted at a glance, a coverage hole that averages away is the
-    failure worth avoiding.
+    a dropout narrower than one pixel still shows as a notch.  A coverage hole
+    that averages away is the failure this page has to avoid, since a reader
+    who does not open the pileup will never see it.
 
     The height is logarithmic.  A run where one region draws many times the
     reads of the rest is common -- primer dimer and truncated product both do
@@ -540,8 +549,8 @@ def _run_label(group: GroupSummary, run: Tuple[int, int, float]) -> str:
 def _call_count(group: GroupSummary, runs: Sequence) -> str:
     """The line on the collapsed detail, and the only statement of the count.
 
-    A long list is not drawn in full — each window costs a hundred columns of
-    reads — so the line says how many stretches are below it.
+    A long list is not drawn in full, since each window costs a hundred
+    columns of reads, so the line says how many stretches are below it.
     """
     if not runs:
         return f"No position disagrees at {MISMATCH_ALERT:.0%} or more"
@@ -696,8 +705,9 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
     THE SEAM.  Everything specific to being an HTML page rather than a drawing
     lives in this one function: the document skeleton, the reset, the palette
     emission, and the light/dark bridge that reads the host application's stored
-    preference.  None of it is particular to a summary — the pileup page builds
-    the same shell inside its own f-string — so when that markup is extracted
+    preference.  None of it is particular to a summary, since the pileup page
+    builds the same shell inside its own f-string, so when that markup is
+    extracted
     into a shared asset this function is what gets replaced, and nothing above
     it has to change.
     """
@@ -712,12 +722,15 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
         + ["}"]
     )
 
+    # The tab names the well too, since a plate's worth of these are open at
+    # once and the reference name is the same on every one.
+    tab_title = view.title + (f" · {view.well.label}" if view.well else "")
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_e(view.title)}</title>
+<title>{_e(tab_title)}</title>
 <style id="{theme.style_id}">
 {palette_css}
 :root {{
@@ -790,7 +803,7 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
     display: block; width: 100%; height: auto; overflow: visible;
     /* A viewBox scales the type along with the drawing, so past a point the
        whole thing shrinks into illegibility. Below this the drawing keeps its
-       size and its container scrolls instead — measured: at a 420px viewport an
+       size and its container scrolls instead.  Measured: at a 420px viewport an
        unfloored annotation track renders 6px tall. */
     min-width: {MIN_DRAW_WIDTH}px;
 }}
@@ -872,6 +885,24 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
    and above the crossfade so it stays legible through it. --- */
 .sv-views-fixed {{ position: fixed; top: 0.8rem; left: 1.5rem;
     z-index: 25; }}
+/* --- Plate map: in the flow, right-aligned over the content it places. --- */
+.sv-plate-row {{ display: flex; justify-content: flex-end;
+    margin: 0 0 0.5rem; line-height: 0; }}
+.sv-plate {{ display: block; }}
+.sv-well {{ font: 600 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--{prefix}-tick-label); margin-left: 0.55rem;
+    padding: 0.05rem 0.4rem; border: 1px solid var(--{prefix}-stem);
+    border-radius: 3px; cursor: help; }}
+/* The frame takes the track bed's fill and the tick ink for its stroke, so it
+   lifts off the page background the way the tracks do. */
+.sv-plate-frame {{ fill: var(--{prefix}-mm-bed); stroke: var(--{prefix}-stem);
+    stroke-width: 1.2; }}
+.sv-plate-well {{ fill: var(--{prefix}-depth-edge); stroke: none; }}
+.sv-plate-here {{ fill: var(--{prefix}-tick-label); }}
+.sv-plate-title {{ font: 500 7px ui-monospace, SFMono-Regular, Menlo, monospace;
+    fill: var(--{prefix}-stem); }}
+.sv-plate-label {{ font: 600 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+    fill: var(--{prefix}-tick-label); }}
 /* The crossfade: the page's own background, drawn over the content.  It starts
    opaque and clears once the page has drawn, so a page is never seen filling in
    behind a fade that has already finished. */
@@ -1079,9 +1110,9 @@ def _thresholds(view: SummaryView) -> str:
                  "position the reads disagree about in several directions is "
                  "reported at the total. A deletion counts as disagreement; an "
                  "uncovered position is not counted."),
-        ("Bar colour", f"Muted below {MISMATCH_ALERT:.0%}, which is where every "
-                       "position sits from sequencing error alone. Coloured at "
-                       "or above it."),
+        ("Bar colour", f"Muted below {MISMATCH_ALERT:.0%}. Sequencing error alone "
+                       "puts every position near that rate, so only bars at "
+                       "or above it are coloured."),
         ("Bar height", "The worst position in each pixel column, not the mean. "
                        "Over a reference of several kilobases a column spans "
                        "several bases, and the mean of one disagreeing base "
@@ -1147,6 +1178,21 @@ def _banner(counterpart: Optional[str]) -> str:
             f"{current}{other}</div></div>")
 
 
+def _plate_row(well: Optional[Well]) -> str:
+    """The plate map, right-aligned over the content it belongs to."""
+    if well is None:
+        return ""
+    return f'<div class="sv-plate-row">{plate_svg(well, "sv")}</div>'
+
+
+def _well_chip(well: Optional[Well]) -> str:
+    """The well's name beside the group's, for a reader who skips the map."""
+    if well is None:
+        return ""
+    return (f'<span class="sv-well" title="Well {_e(well.label)} of a '
+            f'{well.plate}-well plate">{_e(well.label)}</span>')
+
+
 def render_summary(view: SummaryView, max_lanes: int = 2,
                    pileup_href: Optional[str] = None) -> str:
     """Render *view* to a complete HTML document and return it as a string.
@@ -1198,7 +1244,7 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
 
     # No heading: the group's own line carries its name, its reads and its
     # depth, and the document title names the reference for a bookmark or a tab.
-    head = f"{_banner(pileup_href)}{highlighted}{dropped}"
+    head = f"{_banner(pileup_href)}{_plate_row(view.well)}{highlighted}{dropped}"
 
     # The reference is drawn once and placed between each group's disagreement
     # track and its reads, so the coordinate both are read against sits between
@@ -1221,7 +1267,8 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
         sections.append(
             '<div class="sv-group">'
             f'<div class="sv-group-head"><span class="sv-name">'
-            f"{_e(group.name)}{star}</span>{_chip(group)}{status}</div>"
+            f"{_e(group.name)}{star}</span>{_well_chip(view.well)}"
+            f"{_chip(group)}{status}</div>"
             f'<div class="sv-facts">{_facts(group, view)}</div>'
             f'<div class="sv-stack">'
             f"{_upper_svg(group, view, cell_w)}"

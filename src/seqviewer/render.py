@@ -2,8 +2,8 @@
 
 The page draws an HTML5 canvas matrix: one row per read, one cell per reference
 position.  Matches are gray, mismatches take a per-base color, gaps are white.
-Above the reads sit a ruler and a consensus row; below them, when the view marks
-an insert, the reference and consensus translations of that insert.
+A ruler and a consensus row head the matrix.  Where the view marks an insert,
+the reference and consensus translations of that insert follow the reads.
 
 Nothing here touches the filesystem, a subprocess, or an aligner.  The input is
 a finished grid, so this module has no dependencies outside the standard library
@@ -29,6 +29,7 @@ from .summary import mismatch_counts as _mismatch_counts
 from .annotate import MISMATCH_TRACK_HEIGHT as _MISMATCH_TRACK_HEIGHT
 from .codon import translate as _translate
 from .pileup import PileupView
+from .plate import plate_svg
 
 __all__ = ["render"]
 
@@ -205,6 +206,20 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
             '<span class="sv-view" aria-current="page">Pileup</span>'
             "</div></div>"
         )
+    # The plate map goes over the masthead, right-aligned to the content, and
+    # the well's name beside the title for a reader who skips the map.  The
+    # tab carries it too: a plate's worth of these are open at once and the
+    # reference name is the same on every one.
+    plate_row = well_chip = ""
+    tab_title = title
+    if view.well is not None:
+        plate_row = (f'<div class="sv-plate-row">'
+                     f"{plate_svg(view.well, 'sv')}</div>")
+        well_chip = (f'<span class="sv-well" title="Well '
+                     f'{_html.escape(view.well.label)} of a '
+                     f'{view.well.plate}-well plate">'
+                     f"{_html.escape(view.well.label)}</span>")
+        tab_title = f"{title} · {view.well.label}"
 
     _theme = view.theme
     _p = _theme.css_prefix
@@ -638,7 +653,7 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_html.escape(title)}</title>
+<title>{_html.escape(tab_title)}</title>
 <style id="{_style_id}">
 {palette_css}
 {pileup_css}
@@ -654,9 +669,9 @@ var SV_PALETTE = {palette_js};
 <body>
 {summary_link}<div class="sv-fade"></div>
 <noscript><style>.sv-fade {{ display: none; }}</style></noscript>
-<div class="sv-panel">
+{plate_row}<div class="sv-panel">
     <div class="sv-panel-id">
-        {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{head_chip}</div>
+        {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{well_chip}{head_chip}</div>
         <div class="sv-facts">{head_facts}</div>
         {highlight_line}
     </div>

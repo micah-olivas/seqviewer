@@ -102,8 +102,8 @@ class Palette:
 
 
 #: Colours for a terminal that reports one.  The peak bin is brightened and the
-#: clipped tails are dimmed, so the bulk of the distribution is what the eye
-#: reaches first.
+#: clipped tails are dimmed, so the bulk of the distribution is the most
+#: prominent part of the plot.
 PALETTE = Palette(
     bar="\x1b[38;5;37m",
     peak="\x1b[1;38;5;44m",
@@ -574,8 +574,8 @@ def summarise_counts(counts: LengthCounts) -> Summary:
 
     N50 is the length at which reads of that length or longer account for half of
     all bases.  It differs from the mean where a run mixes many short reads with
-    a few long ones: the mean sits near the short reads and the N50 near the
-    long.  Both are reported so the difference is visible.
+    a few long ones: the mean tracks the short reads and the N50 the long ones.
+    Both are reported so the difference is visible.
     """
     if counts.empty:
         return Summary(0, 0, 0, 0, 0, 0.0, 0)

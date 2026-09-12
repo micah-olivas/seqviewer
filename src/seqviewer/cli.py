@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Align reads to a reference and write a seqviewer pileup page.
 
-    seqviewer-pileup reads/ reference out.html [options]
+    seqview pileup reads/ reference out.html [options]
 
 Reads are a directory of FASTQs or a single file.  A sequencing run arrives as a
 directory of per-barcode files, so a directory is the expected input; its files
@@ -11,17 +11,18 @@ A page draws a few hundred reads by default, sampled from across the whole of
 every file.  A deep run drawn whole is a page too large to open, and the reads
 at the front of one file are not the run; ``--max 0`` draws all of them anyway.
 
-Reading the reference is :mod:`seqviewer.genbank`'s job — FASTA, GenBank, ApE,
+Reading the reference is :mod:`seqviewer.genbank`'s job: FASTA, GenBank, ApE,
 and SnapGene all arrive as a ``Reference`` with its topology and features.  What
 is left here is the part the package does not cover: reading a FASTQ, and the
 two adjustments a plasmid needs.  A circular reference is aligned against a
 doubled copy so reads crossing the origin stay whole, and a named feature can
 supply the flanks the page marks.
 
-``--summary`` writes a second page beside the pileup, reduced from the same
-view: the construct as an annotated map, one band per group with a lollipop per
-called variant, and the variants as a table.  It answers "is anything wrong with
-this clone" where the pileup answers "what does every read say".
+Both pages are written unless ``--no-summary`` asks for the pileup alone.  The
+summary reduces the same view to one screen: the construct as an annotated map,
+and per group a track of per-position disagreement with the reference over the
+coverage profile.  It reports whether a clone carries an error; the pileup
+reports what each read says at each position.
 
 seqviewer takes reads as ``Read(name, seq, qual)`` records, so FASTQ parsing is
 the caller's job.  Everything after that is grid_from_reads plus render.
@@ -34,6 +35,7 @@ import gzip
 import itertools
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -53,6 +55,7 @@ from .align import Read, grid_from_reads
 from .cluster import cluster_rows
 from .genbank import load_reference
 from .pileup import PileupGroup, PileupView
+from .plate import FORMATS, parse_well
 from .render import render
 from .render_summary import render_summary
 from .summary import DEFAULT_MIN_COUNT, DEFAULT_MIN_FRACTION, SummaryView
@@ -128,7 +131,7 @@ def downsample(reads, k, seed=SAMPLE_SEED):
     The reads are a stream of unknown length, so this is reservoir sampling: it
     holds only the k it keeps and makes one pass, which is what lets a run of any
     depth be capped without reading it into memory first.  Sampling rather than
-    truncating matters for a directory — the first k reads of a pool are the
+    truncating matters for a directory: the first k reads of a pool are the
     first file's reads, and a page drawn from those is a page of one barcode.
 
     Every read is kept when there are no more than k of them, and the order the
@@ -195,13 +198,11 @@ def write_fasta(reference, path, doubled=False):
 def write_log(out, args, lines):
     """Write a plain-text log of this run next to the HTML page it produced.
 
-    Just the run's own stdout narration (reference, files, counts) plus the
-    ordering function applied, so the page's provenance survives without
-    re-running the command.
+    The run's own stdout narration, colour stripped, so the page's provenance
+    survives without re-running the command.
     """
     log_path = out.with_suffix(".log.txt")
-    header = [f"seqviewer-pileup log: {out.stem}",
-              f"ordering function: {args.order}", ""]
+    header = [f"seqview pileup: {out.stem}", ""]
     log_path.write_text("\n".join(header + lines) + "\n")
     return log_path
 
@@ -275,6 +276,20 @@ ORDERINGS = {
     "mismatch": lambda rows, ref: cluster(rows),
     "cluster": lambda rows, ref: cluster_rows(rows, ref),
 }
+
+#: How each ordering reads in a sentence, since the flag's own name does not.
+ORDER_WORDS = {
+    "length": "longest first",
+    "position": "leftmost first",
+    "mismatch": "by mismatch pattern",
+    "cluster": "clustered by mismatch",
+}
+
+#: Field names in a run's report, padded to one column.
+NOTE_FIELD = 11
+
+#: Colour codes, stripped from a line before it is kept for the log file.
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def focus_flanks(reference, label):
@@ -375,14 +390,24 @@ def build_parser(prog=None):
                              "the summary calls it (default "
                              f"{DEFAULT_MIN_FRACTION:g}). Lower it to see "
                              "events the default suppresses as sequencing "
-                             "error; only meaningful with --summary")
+                             "error; no effect under --no-summary")
     parser.add_argument("--variant-reads", type=int,
                         default=DEFAULT_MIN_COUNT, metavar="N",
                         help="reads that must support a variant whatever the "
                              f"share (default {DEFAULT_MIN_COUNT}). At shallow "
                              "depth a single read is the error rate, not a "
-                             "variant; only meaningful with --summary")
-    parser.add_argument("--title")
+                             "variant; no effect under --no-summary")
+    parser.add_argument("--title",
+                        help="page heading, replacing the default "
+                             "'Pileup: <reference name>'")
+    parser.add_argument("--well", metavar="WELL",
+                        help="where this sample sits on its plate, such as A1 "
+                             "or P24. Both pages then carry a plate map in the "
+                             "upper right with that well filled")
+    parser.add_argument("--plate", type=int, choices=sorted(FORMATS),
+                        help="the plate format the well is read against. "
+                             "Inferred from the well when not given: past row "
+                             "H or column 12 is 384, and otherwise 96")
     return parser
 
 
@@ -390,26 +415,48 @@ def main(argv=None, prog=None):
     parser = build_parser(prog)
     args = parser.parse_args(argv)
 
+    # Read before any file is opened, so a mistyped well fails in the time it
+    # takes to read the flag rather than after the alignment.
+    well = None
+    if args.well:
+        try:
+            well = parse_well(args.well, args.plate)
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.plate:
+        parser.error("--plate names a format for --well; give the well too")
+
     log_lines = []
 
     def log(msg):
+        """Print a line and keep a plain copy of it for the log file."""
         print(msg)
-        log_lines.append(msg)
+        log_lines.append(ANSI.sub("", msg))
+
+    def note(field, value):
+        """One fact of the run, as an aligned pair under its group."""
+        log(f"  {dim(field.ljust(NOTE_FIELD))}{value}")
+
+    palette = (lengths.PALETTE if sys.stdout.isatty()
+               and not os.environ.get("NO_COLOR") else None)
+
+    def dim(text):
+        return f"{palette.tail}{text}{palette.reset}" if palette else text
+
+    def sep():
+        return dim(" · ")
 
     skip_types = (None if args.skip_types is None
                   else tuple(t for t in args.skip_types.split(",") if t))
     reference = load_reference(args.reference, skip_types=skip_types)
     if args.ref_name:
         reference.name = args.ref_name
-    log(f"reference {reference.name}: {len(reference)} bp, {reference.topology}, "
-        f"{len(reference.features)} features")
 
     paths = fastq_paths(args.reads)
     if not paths:
         print(f"no FASTQ files at {args.reads}", file=sys.stderr)
         return 1
-    log(f"{len(paths)} FASTQ file{'s' if len(paths) != 1 else ''}: "
-        + ", ".join(p.name for p in paths))
+    files = f"{len(paths)} file{'s' if len(paths) != 1 else ''}"
 
     samples = collect_samples(paths, args.name, args.max, args.min_read_len,
                               pooled=not args.per_file)
@@ -418,12 +465,14 @@ def main(argv=None, prog=None):
         return 1
     total_reads = sum(len(reads) for _, reads, _ in samples)
     total_seen = sum(seen for _, _, seen in samples)
-    sampled = " sampled from {:,}".format(total_seen) if total_seen > total_reads else ""
-    log(f"{total_reads:,} reads to align{sampled} in {len(samples)} "
-        f"group{'s' if len(samples) != 1 else ''}, ordered by {args.order}")
-    if sampled:
-        print(f"pass --max 0 to draw all {total_seen:,}, at roughly "
-              f"{total_seen * 2 // 1000:,} MB of HTML")
+
+    # The two heading lines: where the reads came from, and what they are being
+    # read against.  Everything after them is indented under a group, so a run
+    # reads as a block rather than as a scroll of sentences.
+    log(f"{', '.join(p.name for p in paths)}{sep()}{files}"
+        f"{sep()}{total_seen:,} reads")
+    log(f"{reference.name}{sep()}{len(reference):,} bp {reference.topology}"
+        f"{sep()}{len(reference.features):,} features")
 
     # A circular reference is aligned against two copies of itself so that reads
     # crossing the origin stay in one piece, then folded back to one copy.
@@ -434,9 +483,13 @@ def main(argv=None, prog=None):
     fasta = write_fasta(reference, out.with_suffix(".ref.fasta"), doubled=circular)
     align_seq = reference.seq * 2 if circular else reference.seq
     if circular:
-        log("circular: aligning against a doubled reference, then folding")
+        log(dim("  aligned against a doubled reference, then folded"))
 
     groups = []
+    #: One dict per drawn group, filled in over two phases: the alignment loop
+    #: knows what was drawn and covered, and the summary knows the depth and
+    #: what it called.  Held rather than printed so each group reports once.
+    reports = {}
     for label, reads, seen in samples:
         name = label or reference.name
         rows = grid_from_reads(reads, fasta, align_seq,
@@ -452,11 +505,13 @@ def main(argv=None, prog=None):
         rows = ORDERINGS[args.order](rows, reference.seq)
         covered = sum(1 for i in range(len(reference))
                       if any(row[i][0] != "-" for row in rows))
-        of_seen = f", sampled from {seen:,}" if seen > len(reads) else ""
-        log(f"{name}: {len(rows)} of {len(reads):,} reads drawn "
-            f"({len(rows) / len(reads):.0%}){of_seen}; {covered} of "
-            f"{len(reference)} positions covered "
-            f"({covered / len(reference):.0%})")
+        of_seen = (f" of {len(reads):,} sampled" if seen > len(reads)
+                   else " of {:,}".format(len(reads)))
+        reports[name] = {
+            "reads": f"{len(rows):,} drawn{of_seen}, {ORDER_WORDS[args.order]}",
+            "coverage": (f"{covered:,} of {len(reference):,} positions "
+                         f"({covered / len(reference):.0%})"),
+        }
         # No status: it is a consensus call, and this driver has no consensus to
         # report.  A constant string here would be styled as one and say nothing.
         groups.append(PileupGroup(name=name, ref_seq=reference.seq, rows=rows,
@@ -477,12 +532,14 @@ def main(argv=None, prog=None):
         flanks=focus_flanks(reference, args.insert),
         features=reference.features,
         ref_len=len(reference),
+        well=well,
     )
-    log(f"flanks: {view.flanks} | {len(view.features)} features drawn")
+    if view.flanks:
+        log(dim(f"  flanks from --insert: {view.flanks}"))
     summary_out = summary_path(out)
     out.write_text(render(
         view, summary_href=None if args.no_summary else summary_out.name))
-    print(f"Wrote {out.resolve()}")
+    written = [out]
 
     if not args.no_summary:
         # Reduced from the same view the pileup drew, so the two pages cannot
@@ -492,19 +549,37 @@ def main(argv=None, prog=None):
             min_fraction=args.variant_freq,
             min_count=args.variant_reads,
         )
-        log(f"summary: calling at >={args.variant_freq:.0%} of covering reads "
-            f"and >={args.variant_reads} supporting")
+        threshold = (f"≥{args.variant_freq:.0%} of covering reads and "
+                     f"≥{args.variant_reads} supporting")
         for group in summary.groups:
             called = len(group.variants)
-            log(f"{group.name}: {called} variant{'s' if called != 1 else ''} "
-                f"called, {group.verdict}; {group.mean_depth:.0f}x mean depth "
-                f"over {group.covered} of {group.ref_len} positions")
+            report = reports.setdefault(group.name, {})
+            report["coverage"] = (f"{report.get('coverage', '')}"
+                                  f"{sep()}{group.mean_depth:.0f}× mean "
+                                  f"depth")
+            report["variants"] = (
+                f"{called} called at {threshold}" if called
+                else f"none at {threshold}")
         summary_out.write_text(
             render_summary(summary, pileup_href=out.name))
-        print(f"Wrote {summary_out.resolve()}")
+        written.append(summary_out)
 
-    log_path = write_log(out, args, log_lines)
-    print(f"Wrote {log_path.resolve()}")
+    for name, report in reports.items():
+        print()
+        log_lines.append("")
+        if len(reports) > 1:
+            log(name)
+        for field, value in report.items():
+            note(field, value)
+
+    written.append(write_log(out, args, log_lines))
+    print()
+    print("Wrote " + sep().join(p.name for p in written))
+    # Named only when the files are somewhere other than here, since the
+    # common case is a directory the caller is already standing in.
+    where = out.resolve().parent
+    if where != Path.cwd():
+        print(dim(f"      in {where}"))
     return 0
 
 
@@ -901,8 +976,8 @@ class LiveView:
                 print(line)
 
 
-def lengths_main(argv=None, prog="seqviewer-lengths"):
-    """Print a read-length histogram for a directory of FASTQs, or one file."""
+def build_lengths_parser(prog="seqviewer-lengths"):
+    """The lengths parser, apart from the command, so the docs can read it."""
     parser = argparse.ArgumentParser(
         prog=prog,
         description="Plot the read-length distribution of a sequencing run as "
@@ -955,7 +1030,12 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
     parser.add_argument("--slow", action="store_true",
                         help="scan without numpy, which is slower on a large "
                              "file and reports the same figures")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def lengths_main(argv=None, prog="seqviewer-lengths"):
+    """Print a read-length histogram for a directory of FASTQs, or one file."""
+    args = build_lengths_parser(prog).parse_args(argv)
 
     paths = fastq_paths(args.reads)
     if not paths:

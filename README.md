@@ -1,6 +1,8 @@
 # seqviewer
 
-Viewers for sequencing alignments.
+Lightweight tools for working with sequencing files.
+`docs/index.html` is the documentation page, generated from the package by
+`python docs/build.py`; it carries every flag of every command.
 
 ## Install
 
@@ -87,9 +89,10 @@ from seqviewer import SummaryView, render_summary
 Path("summary.html").write_text(render_summary(SummaryView.from_view(view)))
 ```
 
-Glyph shape carries the kind of change — substitution, deletion, insertion — and
-color carries the consequence: frameshift or premature stop, missense or in-frame
-indel, silent, or outside the reading frame.
+Each called position is marked once, at one size whatever the frequency, and
+coloured by consequence: frameshift or premature stop, missense or in-frame
+indel, silent, or outside the reading frame. Hovering a mark reports the
+position, the change, the reads supporting it, and its effect.
 Each called variant also gets a base-resolution window, drawn as one letter per
 base with each codon bracketed under the three bases it is translated from.
 
@@ -148,13 +151,13 @@ this package's `requires-python`. `uv tool uninstall seqviewer` undoes it.
 
 A page draws 500 reads by default, sampled uniformly from across the whole of
 every file. A row costs roughly 2 KB of HTML, so a 35,000-read pool drawn whole
-is a 70 MB page — too large to open, and no more readable for holding every
+is a 70 MB page, too large to open and no more readable for holding every
 read. `--max` moves the number and `--max 0` draws all of them. The sample is
 seeded, so the same directory gives the same page twice.
 
-`--summary` writes the summarized page beside the pileup, named from its stem:
-`pileup.html` and `pileup.summary.html`. `--variant-freq` and `--variant-reads`
-move the two calling floors. The log written beside the page records which
+Both pages are written, named from the same stem: `pileup.html` and
+`pileup.summary.html`. `--no-summary` writes only the pileup. `--variant-freq`
+and `--variant-reads` move the two calling floors. The log written beside the page records which
 thresholds produced it and what was called.
 
 Worth knowing: `--insert LABEL` marks a feature as the focus region, which is
@@ -162,10 +165,13 @@ what draws the boundary lines, the translation rows, and the frame that variants
 are classified against. `--order` sets the row order; `cluster` is hierarchical,
 average linkage over what each read disagrees about, which groups a
 subpopulation that the cheaper `mismatch` ordering splits when a read carries an
-unrelated error further left. `--help` lists the rest.
+unrelated error further left. `--well B7` names the sample's position on its
+plate, and both pages then carry a plate map in the upper right with that well
+filled; the format is inferred from the well (past row H or column 12 is 384)
+or set with `--plate`. `--help` lists the rest.
 
 A track above the reference shows, per position, the share of covering reads
-that disagree with it, on a log scale marked at 1% and 10%. A deletion counts as
+that disagree with it, on a linear scale marked at 10% and 50%. A deletion counts as
 disagreement, so a column half the reads have deleted reads as half disagreeing
 rather than as clean. `seqviewer.summary.mismatch_fractions` is the one
 definition of that number, and both pages read it.
@@ -182,8 +188,8 @@ seqview lengths reads/
 ```
 
 `seqview` dispatches to the two commands, `pileup` and `lengths`, and each is
-installed under its own name as well — `seqviewer-pileup` and
-`seqviewer-lengths` — taking the same arguments either way. `seqview` on its own
+installed under its own name as well, `seqviewer-pileup` and
+`seqviewer-lengths`, taking the same arguments either way. `seqview` on its own
 lists them.
 
 The axis covers the central 99% of reads rather than the full range, because a
@@ -194,8 +200,8 @@ default axis spreads them over 21
 (`tests/test_lengths.py::test_clipping_keeps_the_product_resolved`).
 
 Reads outside the axis are counted in a row of their own, labelled with the
-extreme they reach, and every reported figure — minimum, maximum, median, mean,
-N50 — covers the whole run rather than the part in view. `--bulk` moves the share
+extreme they reach, and every reported figure (minimum, maximum, median, mean,
+N50) covers the whole run rather than the part in view. `--bulk` moves the share
 the axis covers and `--bulk 100` spans the full range.
 
 `--bins` and `--width` set the bin count and the output width, which defaults to
@@ -238,14 +244,15 @@ Where stdout is a terminal and the window has room, the histogram appears
 straight away and fills in as the run is counted, four redraws a second, with a
 progress line under it. Watch the axis shift while it fills: the percentiles that
 place it are recomputed from whatever has been counted, so it only settles on the
-last block. The figures — median, N50 and the rest — are held back until it does,
+last block. The figures (median, N50 and the rest) are held back until it does,
 since they churn under the bars without saying anything the bars do not.
 Redrawing is cheap, because a frame reduces the tally rather than rereading the
 file.
 
 Any key stops the scan. The histogram is then drawn from the reads counted so far
-and says so, because its figures describe part of the run rather than all of it —
-useful for reading the shape of a large file without waiting for the tail of it.
+and says so, because its figures describe part of the run rather than all of it.
+Stopping early is how the shape of a large file is read without waiting for its
+tail.
 `--no-live` waits and draws once instead.
 
 Piping or redirecting changes that. Nothing goes out until the scan finishes, and
@@ -266,12 +273,12 @@ seqview lengths reads/ --png lengths.pdf       # the suffix picks the format
 ```
 
 It is drawn to journal-figure conventions: Arial at 7–8 pt, thin rules, ticks
-outward, no gridlines, a full box, the panel 183 mm across — the width of a
-two-column figure — and 300 dpi. The suffix chooses the format, and a PDF or SVG
+outward, no gridlines, a full box, the panel 183 mm across (the width of a
+two-column figure) and 300 dpi. The suffix chooses the format, and a PDF or SVG
 keeps its text as text, so the figure can still be edited in Illustrator.
 
-The figure bins far finer than the terminal — 240 across the axis rather than 24
-— because it is bounded by its pixels rather than by the rows of a window, and
+The figure bins far finer than the terminal, 240 across the axis rather than
+24, because it is bounded by its pixels rather than by the rows of a window, and
 structure the terminal has to smooth over fits in it. `--png-bins` moves that
 number; `--bins` stays the terminal's. Bin width floors at one base, so a run
 whose reads span a narrow range yields fewer bins than asked for rather than
@@ -298,7 +305,7 @@ alone.
 A `.gz` is bounded by inflating it, not by the scan: reading its compressed bytes
 costs almost nothing, and zlib takes roughly as long to inflate a block as the
 array scanner takes to count it. Two ways around that were measured and neither
-helped on an M3 Pro — ISA-L through `python-isal` inflated at about a tenth of
+helped on an M3 Pro. ISA-L through `python-isal` inflated at about a tenth of
 zlib's rate, and piping from `gzip -dc` to overlap inflating with counting lost
 to the cost of the pipe. Expect a gzipped run to scan at a fraction of the rate
 of the same reads uncompressed.
@@ -307,7 +314,7 @@ of the same reads uncompressed.
 
 `Reference` and `Feature` describe a construct and are the substrate the
 package's viewers share. `Feature` records a half-open `[start, end)` span, a
-strand, and whether the feature wraps the origin of a circular construct — a
+strand, and whether the feature wraps the origin of a circular construct, a
 wrapped feature's real extent is not `[start, end)`, so callers refuse it rather
 than read it as one stretch.
 
@@ -352,15 +359,11 @@ checks all 4,096 codons over the full IUPAC alphabet against
 
 ## Out of scope
 
-These are excluded so the package does not become a plasmid editor:
-
-- sequence editing
-- restriction-enzyme and REBASE site calculation
-- primer design
-- ORF finding
-- implementing aligners — `grid_from_reads` invokes minimap2 and reads the result
-- chromatogram viewing
-- plate and well-layout maps
+Sequence editing, restriction-enzyme and REBASE site calculation, primer design,
+ORF finding, chromatogram viewing, and plate and well-layout maps are all out,
+so the package does not become a plasmid editor. Aligners are out too:
+`grid_from_reads` invokes minimap2 and reads the result rather than implementing
+one.
 
 ## Tests
 

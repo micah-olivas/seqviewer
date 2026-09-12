@@ -15,6 +15,7 @@ from typing import List, Optional, Sequence, Tuple
 
 from .construct import Reference
 from .grid import Row
+from .plate import Well
 from .theme import Theme
 
 __all__ = ["PileupGroup", "PileupView"]
@@ -86,10 +87,14 @@ class PileupView:
     Nothing is translated when there is no focus region to translate.
 
     A track below the features shows, per reference position, what share of a
-    group's covering reads disagree with the reference there, on a log scale
-    marked at 1% and 10%.  It is always drawn: it replaced a row of flag
+    group's covering reads disagree with the reference there, on a linear scale
+    marked at 10% and 50%.  It is always drawn: it replaced a row of flag
     triangles in the ruler that was itself unconditional, and it is the page's
     only account of disagreement, so gating it would lose that by default.
+
+    ``well`` is where the sample came from on its plate, when the caller knows.
+    Both pages then draw a plate map in a corner with that well filled, so a
+    reader moving between the wells of a run keeps their bearings.
     """
 
     title: str
@@ -102,6 +107,7 @@ class PileupView:
     ref_len: Optional[int] = None
     translate: bool = True
     theme: Theme = field(default_factory=Theme)
+    well: Optional[Well] = None
 
     @classmethod
     def from_reference(

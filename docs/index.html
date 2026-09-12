@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>seqviewer</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #f7f8f9;
+  --panel: #ffffff;
+  --ink: #16212b;
+  --muted: #4a5560;
+  --quiet: #667380;
+  --rule: #dde1e5;
+  --accent: #1f77b4;       /* the colour the package plots its figures in */
+  --flag: #c22f2f;         /* and the colour it flags a finding in */
+  --term-bg: #eef1f3;
+  --term-ink: #1d262e;
+  --rail: 7.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #10151a; --panel: #161d24; --ink: #e4e9ed; --muted: #a9b4be;
+    --quiet: #8795a1; --rule: #26313b; --accent: #6cb6e8; --flag: #f0655f;
+    --term-bg: #0c1116; --term-ink: #d3dae0;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15.5px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+}
+.page { max-width: 54rem; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
+
+/* --- masthead --- */
+.mast { display: grid; grid-template-columns: var(--rail) 1fr; gap: 1.5rem;
+        align-items: baseline; padding-bottom: 1.4rem;
+        border-bottom: 2px solid var(--ink); }
+.mast h1 { grid-column: 1 / -1; font: 600 1.6rem/1.1 ui-monospace,
+           SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+           letter-spacing: -0.02em; margin: 0 0 0.7rem; }
+/* The intro starts in the content column, on the same line as every tool's
+   prose, rather than in the rail. */
+.mast p { grid-column: 2 / -1; margin: 0; color: var(--muted);
+          max-width: 38rem; min-width: 0; }
+
+/* --- the rail: one row per tool, and room for the next --- */
+.tool { display: grid; grid-template-columns: var(--rail) 1fr; gap: 1.5rem;
+        padding: 2.1rem 0; border-bottom: 1px solid var(--rule); }
+.tool > .label { position: sticky; top: 1.5rem; align-self: start; }
+.tool > .label .name {
+  display: block; font: 600 0.87rem/1.3 ui-monospace, SFMono-Regular,
+  "SF Mono", Menlo, Consolas, monospace; color: var(--ink);
+}
+.tool > .label .what { display: block; margin-top: 0.2rem;
+                       font-size: 0.76rem; color: var(--quiet); }
+/* A grid item defaults to min-width:auto, which is a refusal to shrink below
+   its widest content.  A wide transcript inside one therefore widens the
+   column, the grid, and the page, and the overflow-x below never engages.
+   Zero here is what lets the scroll container be the transcript itself. */
+.tool > .label, .tool > .body { min-width: 0; }
+.tool > .body > :first-child { margin-top: 0; }
+.tool > .body > :last-child { margin-bottom: 0; }
+.tool.next .label .name { color: var(--quiet); }
+.tool.next .body { color: var(--quiet); font-size: 0.95rem; }
+
+p { margin: 0 0 0.95rem; max-width: 38rem; }
+
+/* --- a command and what it printed --- */
+.run { margin: 1.1rem 0 1.2rem; min-width: 0; }
+/* Nothing here wraps.  A command and its output are both fixed-pitch, and a
+   line folded at the window edge reads as two: the histogram stops being a
+   histogram, and a wrapped command stops being one you can copy by eye.  Each
+   block is bounded by its column and scrolls sideways within it. */
+.run pre {
+  font: 0.78rem/1.55 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+        monospace;
+  margin: 0; padding: 0.7rem 0.9rem;
+  white-space: pre; overflow-x: auto; overscroll-behavior-x: contain;
+}
+.run .cmd { background: var(--panel); color: var(--ink);
+            border: 1px solid var(--rule); }
+.run .cmd b { font-weight: 600; color: var(--accent); }
+.run .out { background: var(--term-bg); color: var(--term-ink);
+            border: 1px solid var(--rule); border-top: none; }
+
+figure { margin: 1.2rem 0; }
+figure img { display: block; width: 100%; height: auto;
+             border: 1px solid var(--rule); }
+figcaption { margin-top: 0.5rem; font-size: 0.86rem; color: var(--muted);
+             max-width: 38rem; }
+
+/* --- what one run turned out to be, as against how the tool works --- */
+.reading { margin: 1.2rem 0; padding-left: 0.9rem;
+           border-left: 2px solid var(--flag);
+           color: var(--muted); font-size: 0.95rem; max-width: 38rem; }
+.reading p:last-child { margin-bottom: 0; }
+
+/* --- every argument the command takes, read off its parser --- */
+.ref { margin-top: 1.6rem; min-width: 0; }
+.ref h3 { font: 600 0.78rem/1.3 ui-monospace, SFMono-Regular, "SF Mono",
+          Menlo, Consolas, monospace; color: var(--quiet);
+          margin: 0 0 0.6rem; }
+/* The term column takes what the longest flag needs, but never more than a
+   third of the row: --min-overlap-pos MIN_OVERLAP_POS would otherwise set the
+   column width and squeeze the descriptions into a ribbon. */
+dl.flags { display: grid;
+           grid-template-columns: minmax(0, min(max-content, 33%)) 1fr;
+           gap: 0 1.2rem; margin: 0; font-size: 0.9rem; }
+dl.flags dt, dl.flags dd { padding: 0.34rem 0; min-width: 0;
+                           overflow-wrap: anywhere;
+                           border-bottom: 1px solid var(--rule); }
+dl.flags dd { margin: 0; color: var(--muted); }
+dl.flags dt:last-of-type, dl.flags dd:last-of-type { border-bottom: none; }
+dl.flags dt code { background: none; padding: 0; font-weight: 600;
+                   color: var(--ink); }
+dl.flags .arg { font: 0.78rem/1 ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+                Consolas, monospace; color: var(--quiet); }
+
+code { font: 0.87em/1 ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+       Consolas, monospace;
+       background: var(--term-bg); padding: 0.08em 0.3em; }
+a { color: var(--accent); text-decoration: underline;
+    text-underline-offset: 0.15em; text-decoration-thickness: 0.06em; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+ul.plain { margin: 0.4rem 0 0.95rem; padding-left: 1.05rem; max-width: 38rem; }
+ul.plain li { margin-bottom: 0.22rem; }
+
+.stamp { margin: 1.6rem 0 0; font-size: 0.8rem; color: var(--quiet); }
+
+@media (max-width: 720px) {
+  .mast, .tool { grid-template-columns: 1fr; gap: 0.5rem; }
+  .mast p { grid-column: 1; }
+  .tool > .label { position: static; }
+  .tool > .label .what { display: inline; margin-left: 0.5rem; }
+  .page { padding: 2.2rem 1.1rem 3rem; }
+  dl.flags { grid-template-columns: 1fr; }
+  dl.flags dt { border-bottom: none; padding-bottom: 0; }
+  dl.flags dd { padding-top: 0.1rem; padding-bottom: 0.7rem; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+<header class="mast">
+  <h1>seqviewer</h1>
+  <p>Lightweight tools for working with sequencing files. Each one does a
+  single job on the formats a run already arrives in, and writes something you
+  can open or paste. They share an entry point, <code>seqview</code>, and
+  nothing else.</p>
+</header>
+
+<section class="tool">
+  <div class="label">
+    <span class="name">install</span>
+    <span class="what">and the entry point</span>
+  </div>
+  <div class="body">
+    <p>The core needs nothing beyond the standard library. Aligning reads needs
+    pysam and biopython, with <code>minimap2</code> and <code>samtools</code> on
+    PATH. The <code>fast</code> extra adds numpy, which about halves the time to
+    scan a large FASTQ, and <code>plot</code> adds matplotlib for figure
+    output.</p>
+    <div class="run">
+      <pre class="cmd">$ <b>uv tool install</b> --python 3.13 'seqviewer[cli,fast,plot] @ git+https://github.com/micah-olivas/seqviewer'</pre>
+    </div>
+    <p>One entry point carries the commands.</p>
+    <div class="run">
+      <pre class="cmd">$ <b>seqview</b></pre>
+      <pre class="out">usage: seqview &lt;command&gt; [options]
+
+commands:
+  pileup   align reads to a reference and write a pileup page
+  lengths  plot the read-length distribution in the terminal
+
+seqview &lt;command&gt; --help lists that command's options.</pre>
+    </div>
+  </div>
+</section>
+
+<section class="tool">
+  <div class="label">
+    <span class="name">lengths</span>
+    <span class="what">read-length distribution</span>
+  </div>
+  <div class="body">
+    <p>Needs no reference and no aligner, so it runs on a file straight off the
+    sequencer. Lengths are tallied as the file is read, which keeps memory
+    bounded by the range of lengths rather than by the number of reads: a
+    multi-gigabyte FASTQ is scanned in one pass.</p>
+
+    <div class="run">
+      <pre class="cmd">$ <b>seqview lengths</b> CRNGS7_1_sample_1.fastq --bins 14</pre>
+      <pre class="out">CRNGS7_1_sample_1.fastq  ·  1 file
+
+         bp                                  reads
+       &lt;128  ▏                                  24  shorter, down to 105
+    128–372  ██████████████████████████████  4,386
+    373–617  ██▉                               418
+    618–862  ▊                                 117
+  863–1,107  ▋                                  87
+1,108–1,352  ▍                                  63
+1,353–1,597  ▏                                   8
+1,598–1,842  ▏                                   7
+1,843–2,087  ▏                                  10
+2,088–2,332  ▏                                   5
+2,333–2,577  ▏                                   6
+2,578–2,822  ▏                                   1
+2,823–3,067  ▏                                   3
+3,068–3,312  ▏                                   2
+3,313–3,553  █▊                                259
+     &gt;3,553  ▏                                  26  longer, up to 4,700
+
+5,422 reads · 2,211,313 bases
+min 105 · median 152 · mean 408 · max 4,700 · N50 1,338
+axis 128–3,553 bp, holding 5,372 of 5,422 reads (99.1%). Pass --bulk 100
+for the full range.</pre>
+    </div>
+
+    <div class="reading">
+      <p>This run is two populations: 4,386 reads of 128&ndash;372&nbsp;bp, and
+      259 that span the full 3.5&nbsp;kb construct. The short ones are 80% of
+      the file and 2% of its bases, which is the gap between the mean, 408, and
+      the N50, 1,338.</p>
+    </div>
+
+    <p>The axis covers the central 99% of reads rather than the full range,
+    because a few concatemers otherwise reach the top of it on their own. Reads
+    outside the axis are counted in a row of their own, labelled with the
+    extreme they reach, and every figure under the histogram covers the whole
+    run: the longest read here is 4,700&nbsp;bp, past the last bin.</p>
+
+    <div class="ref">
+      <h3>seqview lengths [options] reads</h3>
+      <dl class="flags">
+      <dt><code>reads</code></dt>
+      <dd>a directory of FASTQs, or a single FASTQ</dd>
+      <dt><code>--bins</code> <span class="arg">N</span></dt>
+      <dd>bins across the axis (default 24)</dd>
+      <dt><code>--bulk</code> <span class="arg">PCT</span></dt>
+      <dd>percent of reads the axis covers, centred (default 99). Concatemers and other ultra-long artifacts otherwise reach the top of the axis on their own. 100 spans the full range</dd>
+      <dt><code>--log</code></dt>
+      <dd>scale bar length by log(1 + count), which keeps the smaller bins of a peaked distribution distinguishable</dd>
+      <dt><code>--width</code> <span class="arg">COLS</span></dt>
+      <dd>output width (default: the terminal's, or 80)</dd>
+      <dt><code>--per-file</code></dt>
+      <dd>one histogram per FASTQ instead of one for the whole directory</dd>
+      <dt><code>--no-color</code></dt>
+      <dd>write plain text. Colour is already left out when stdout is not a terminal, or when NO_COLOR is set</dd>
+      <dt><code>--no-progress</code></dt>
+      <dd>do not report progress while scanning</dd>
+      <dt><code>--no-live</code></dt>
+      <dd>draw the histogram once the scan finishes rather than filling it in as reads are counted</dd>
+      <dt><code>--png</code> <span class="arg">PATH</span></dt>
+      <dd>also draw the histogram to a figure and open it. PATH may be a file or a directory; given neither, the file is named after the run and put in ~/Downloads. The suffix picks the format, .png by default. Needs the plot extra, which adds matplotlib</dd>
+      <dt><code>--png-bins</code> <span class="arg">N</span></dt>
+      <dd>bins across the figure's axis (default 240). Separate from --bins, which sets the terminal's, since a figure has room for more</dd>
+      <dt><code>--no-open</code></dt>
+      <dd>write the figure without opening it</dd>
+      <dt><code>--slow</code></dt>
+      <dd>scan without numpy, which is slower on a large file and reports the same figures</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section class="tool">
+  <div class="label">
+    <span class="name">pileup</span>
+    <span class="what">reads against a reference</span>
+  </div>
+  <div class="body">
+    <p>Aligns a run with minimap2 and writes two pages. The pileup carries every
+    read base by base. The summary reduces the same alignment to one screen, and
+    reports whether the clone carries an error where the pileup reports what
+    each read says. Each page links to the other.</p>
+
+    <div class="run">
+      <pre class="cmd">$ <b>seqview pileup</b> reads.fastq vector.dna out.html --max 300</pre>
+      <pre class="out">CRNGS7_1_sample_1.fastq · 1 file · 5,422 reads
+Amplified_linear_vector · 3,549 bp linear · 10 features
+
+  reads      287 drawn of 300 sampled, longest first
+  coverage   3,549 of 3,549 positions (100%) · 23× mean depth
+  variants   none at ≥25% of covering reads and ≥2 supporting
+
+Wrote docs_demo.html · docs_demo.summary.html · docs_demo.log.txt</pre>
+    </div>
+
+    <figure>
+      <img alt="The summary page for a 3,549 bp vector: a per-position
+                disagreement track, the annotated reference, and the coverage
+                profile."
+           src="img/summary.png">
+      <figcaption>Three bands, top to bottom: how far the reads disagree with
+      the reference at each position, the annotated reference, and read depth.
+      Bars are muted below 10%, the rate sequencing error alone produces, and
+      coloured at or above it.</figcaption>
+    </figure>
+
+    <p>A reference of several kilobases is drawn a few bases to the pixel, so
+    each column reports the worst position it spans rather than the mean. One
+    position where every read disagrees would otherwise be averaged into its
+    quiet neighbours.</p>
+
+    <div class="ref">
+      <h3>seqview pileup [options] reads reference out</h3>
+      <dl class="flags">
+      <dt><code>reads</code></dt>
+      <dd>a directory of FASTQs, pooled into one pileup, or a single FASTQ; .gz is read directly</dd>
+      <dt><code>reference</code></dt>
+      <dd>FASTA, GenBank (.gb/.gbk/.ape), or SnapGene (.dna); the annotated formats need biopython</dd>
+      <dt><code>--skip-types</code> <span class="arg">TYPES</span></dt>
+      <dd>comma-separated feature types to drop, replacing the default (source,primer_bind).  Pass 'source' to keep primer sites, which is what shows the Golden Gate junctions on an amplicon; pass '' to keep every feature the file declares</dd>
+      <dt><code>out</code></dt>
+      <dd>HTML page to write; .html is appended if not already there</dd>
+      <dt><code>--per-file</code></dt>
+      <dd>draw one group per FASTQ instead of pooling the directory into a single pileup</dd>
+      <dt><code>--name</code> <span class="arg">NAME</span></dt>
+      <dd>keep only reads whose name contains this</dd>
+      <dt><code>--max</code> <span class="arg">MAX</span></dt>
+      <dd>reads drawn per group, sampled uniformly from across the whole of every file rather than taken from the front (default 500); 0 draws every read, which for a deep run is a page too large to open</dd>
+      <dt><code>--min-read-len</code> <span class="arg">MIN_READ_LEN</span></dt>
+      <dd>drop reads shorter than this before aligning</dd>
+      <dt><code>--insert</code> <span class="arg">INSERT</span></dt>
+      <dd>feature label to derive flanks from</dd>
+      <dt><code>--min-overlap-pos</code> <span class="arg">MIN_OVERLAP_POS</span></dt>
+      <dd>drop reads not crossing this position; 0 = keep everything (default), -1 = reference midpoint</dd>
+      <dt><code>--order</code> <span class="arg">{cluster,length,mismatch,position}</span></dt>
+      <dd>row order: length (longest first, the default), position (leftmost first), mismatch (sorts the mismatch pattern as a string), or cluster (hierarchical, average linkage over what each read disagrees about — groups a subpopulation that mismatch splits when a read carries an unrelated early error)</dd>
+      <dt><code>--no-circular</code></dt>
+      <dd>align against one copy even if the reference is circular, discarding origin-crossing segments</dd>
+      <dt><code>--mismatch-freq</code></dt>
+      <dd>accepted and ignored: the mismatch track is now always drawn, having replaced the row of flag triangles. Kept so existing commands still run</dd>
+      <dt><code>--ref-name</code> <span class="arg">REF_NAME</span></dt>
+      <dd>name for the reference, overriding what the file carries (a GenBank/SnapGene file's declared name, or a FASTA header, is often not human-friendly); used as the pooled group name and in the default title</dd>
+      <dt><code>--no-summary</code></dt>
+      <dd>write only the pileup. Both pages are written by default: the summary reads one screen and links to the pileup, and the pileup carries the reads the summary reduces. Named &lt;out&gt;.summary.html</dd>
+      <dt><code>--variant-freq</code> <span class="arg">F</span></dt>
+      <dd>share of covering reads a variant needs before the summary calls it (default 0.25). Lower it to see events the default suppresses as sequencing error; no effect under --no-summary</dd>
+      <dt><code>--variant-reads</code> <span class="arg">N</span></dt>
+      <dd>reads that must support a variant whatever the share (default 2). At shallow depth a single read is the error rate, not a variant; no effect under --no-summary</dd>
+      <dt><code>--title</code> <span class="arg">TITLE</span></dt>
+      <dd>page heading, replacing the default 'Pileup: &lt;reference name&gt;'</dd>
+      <dt><code>--well</code> <span class="arg">WELL</span></dt>
+      <dd>where this sample sits on its plate, such as A1 or P24. Both pages then carry a plate map in the upper right with that well filled</dd>
+      <dt><code>--plate</code> <span class="arg">{96,384}</span></dt>
+      <dd>the plate format the well is read against. Inferred from the well when not given: past row H or column 12 is 384, and otherwise 96</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section class="tool next">
+  <div class="label">
+    <span class="name">next</span>
+    <span class="what">not written yet</span>
+  </div>
+  <div class="body">
+    <p>A tool belongs here when it does one job over a file a run already
+    produces, and finishes without a project directory or a config.
+    Candidates:</p>
+    <ul class="plain">
+      <li>per-barcode yield across a demultiplexed plate</li>
+      <li>quality profile along the read</li>
+      <li>adapter and primer occupancy</li>
+    </ul>
+    <p>Sections still to write: reading the summary page, reading the pileup,
+    calling thresholds and what they miss, reference and feature formats,
+    library use, theming, tests.</p>
+  </div>
+</section>
+
+<p class="stamp">seqviewer 0.1.0. Built from the package by docs/build.py on 2026-09-11.</p>
+
+</main>
+</body>
+</html>
