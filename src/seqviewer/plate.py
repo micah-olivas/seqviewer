@@ -33,7 +33,8 @@ _INSET = 3.0
 #: the map is what tells a reader which corner A1 is without a label.
 _CHAMFER = 5.0
 
-#: Height of the label line under the plate.
+#: Height of the title line over the plate, and of the label line under it.
+_TITLE_H = 11.0
 _LABEL_H = 11.0
 
 _WELL_RE = re.compile(r"^([A-Za-z])0*([1-9][0-9]?)$")
@@ -95,21 +96,25 @@ def plate_svg(well: Well, prefix: str = "sv") -> str:
     radius = pitch * 0.32
     width = cols * pitch + 2 * _INSET
     plate_h = rows * pitch + 2 * _INSET
-    height = plate_h + _LABEL_H
+    top = _TITLE_H
+    height = top + plate_h + _LABEL_H
 
     c = _CHAMFER
-    outline = (f"M{c:.1f},0 H{width:.1f} V{plate_h:.1f} H0 V{c:.1f} Z")
+    outline = (f"M{c:.1f},{top:.1f} H{width:.1f} V{top + plate_h:.1f} H0 "
+               f"V{top + c:.1f} Z")
 
     parts = [
         f'<svg class="{prefix}-plate" viewBox="0 0 {width:.1f} {height:.1f}" '
         f'width="{width:.0f}" height="{height:.0f}" role="img" '
         f'aria-label="Well {well.label} of a {well.plate}-well plate">',
         f"<title>Well {well.label} of {well.plate}</title>",
+        f'<text class="{prefix}-plate-title" x="0" y="{top - 3:.1f}">'
+        f"{well.plate}-well plate</text>",
         f'<path class="{prefix}-plate-frame" d="{outline}" />',
     ]
 
     def centre(r: int, k: int) -> Tuple[float, float]:
-        return (_INSET + (k + 0.5) * pitch, _INSET + (r + 0.5) * pitch)
+        return (_INSET + (k + 0.5) * pitch, top + _INSET + (r + 0.5) * pitch)
 
     wells = []
     for r in range(rows):
@@ -126,7 +131,7 @@ def plate_svg(well: Well, prefix: str = "sv") -> str:
     parts.append(f'<circle class="{prefix}-plate-here" cx="{x:.1f}" cy="{y:.1f}" '
                  f'r="{radius * 1.45:.2f}" />')
     parts.append(f'<text class="{prefix}-plate-label" x="{width:.1f}" '
-                 f'y="{plate_h + _LABEL_H - 2:.1f}" text-anchor="end">'
+                 f'y="{top + plate_h + _LABEL_H - 2:.1f}" text-anchor="end">'
                  f"{well.label}</text>")
     parts.append("</svg>")
     return "".join(parts)

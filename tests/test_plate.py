@@ -121,18 +121,21 @@ def test_no_well_no_map():
     """The stylesheet always carries the rules; the markup appears only when
     there is a well to place."""
     html = render(_view())
-    assert 'class="sv-plate-fixed"' not in html
-    assert 'class="sv-plated"' not in html
+    assert 'class="sv-plate-row"' not in html
+    assert 'class="sv-well"' not in html
+    assert "<title>well page</title>" in html
     summary = render_summary(SummaryView.from_view(_view(), min_depth=1))
-    assert 'class="sv-plate-fixed"' not in summary
-    assert 'class="sv-plated"' not in summary
+    assert 'class="sv-plate-row"' not in summary
+    assert 'class="sv-well"' not in summary
 
 
-def test_the_pileup_page_carries_the_map_and_makes_room_for_it():
+def test_the_pileup_page_carries_the_map_and_names_the_well():
     html = render(_view(well=parse_well("C4")))
-    assert 'class="sv-plate-fixed"' in html
+    assert 'class="sv-plate-row"' in html
     assert "Well C4 of 96" in html
-    assert '<body class="sv-plated">' in html
+    # Beside the title, and in the tab.
+    assert '<span class="sv-name">' in html and '>C4</span>' in html
+    assert "<title>well page · C4</title>" in html
 
 
 def test_the_summary_carries_the_same_well_as_its_pileup():
@@ -142,17 +145,26 @@ def test_the_summary_carries_the_same_well_as_its_pileup():
     assert summary.well == view.well
     html = render_summary(summary)
     assert "Well O23 of 384" in html
-    assert '<body class="sv-plated">' in html
+    assert '<span class="sv-well"' in html and ">O23</span>" in html
+    assert "<title>well page · O23</title>" in html
 
 
-def test_the_map_takes_the_corner_opposite_the_toggle():
-    """Both are fixed; one is left and one is right, on both pages."""
+def test_the_map_is_in_the_flow_over_the_content_not_fixed_to_the_window():
+    """The toggle stays fixed; the map is placed with the content it names."""
     view = _view(well=parse_well("A1"))
     for html in (render(view, summary_href="s.html"),
                  render_summary(SummaryView.from_view(view, min_depth=1),
                                 pileup_href="p.html")):
-        assert "sv-views-fixed" in html and "sv-plate-fixed" in html
-        assert "right: 1.5rem" in html
+        assert "sv-views-fixed" in html
+        assert 'class="sv-plate-row"' in html
+        assert "sv-plate-fixed" not in html
+        # The map comes before the first group's heading in document order.
+        assert html.index('class="sv-plate-row"') < html.index('class="sv-name"')
+
+
+def test_the_map_carries_a_title_naming_the_format():
+    assert "96-well plate</text>" in plate_svg(parse_well("A1"))
+    assert "384-well plate</text>" in plate_svg(parse_well("P24"))
 
 
 # --- the flag -----------------------------------------------------------

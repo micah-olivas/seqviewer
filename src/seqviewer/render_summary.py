@@ -722,14 +722,15 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
         + ["}"]
     )
 
-    # The body makes room under the plate map, which is taller than the toggle.
-    body_class = ' class="sv-plated"' if view.well is not None else ""
+    # The tab names the well too, since a plate's worth of these are open at
+    # once and the reference name is the same on every one.
+    tab_title = view.title + (f" · {view.well.label}" if view.well else "")
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_e(view.title)}</title>
+<title>{_e(tab_title)}</title>
 <style id="{theme.style_id}">
 {palette_css}
 :root {{
@@ -884,15 +885,22 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
    and above the crossfade so it stays legible through it. --- */
 .sv-views-fixed {{ position: fixed; top: 0.8rem; left: 1.5rem;
     z-index: 25; }}
-/* --- Plate map: the opposite corner, fixed the same way. --- */
-.sv-plate-fixed {{ position: fixed; top: 0.8rem; right: 1.5rem; z-index: 25;
-    line-height: 0; }}
-body.sv-plated {{ padding-top: 5.6rem; }}
+/* --- Plate map: in the flow, right-aligned over the content it places. --- */
+.sv-plate-row {{ display: flex; justify-content: flex-end;
+    margin: 0 0 0.5rem; line-height: 0; }}
 .sv-plate {{ display: block; }}
-.sv-plate-frame {{ fill: var(--{prefix}-bg); stroke: var(--{prefix}-grid);
-    stroke-width: 1; }}
-.sv-plate-well {{ fill: var(--{prefix}-grid); stroke: none; }}
+.sv-well {{ font: 600 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--{prefix}-tick-label); margin-left: 0.55rem;
+    padding: 0.05rem 0.4rem; border: 1px solid var(--{prefix}-stem);
+    border-radius: 3px; cursor: help; }}
+/* The frame takes the track bed's fill and the tick ink for its stroke, so it
+   lifts off the page background the way the tracks do. */
+.sv-plate-frame {{ fill: var(--{prefix}-mm-bed); stroke: var(--{prefix}-stem);
+    stroke-width: 1.2; }}
+.sv-plate-well {{ fill: var(--{prefix}-depth-edge); stroke: none; }}
 .sv-plate-here {{ fill: var(--{prefix}-tick-label); }}
+.sv-plate-title {{ font: 500 7px ui-monospace, SFMono-Regular, Menlo, monospace;
+    fill: var(--{prefix}-stem); }}
 .sv-plate-label {{ font: 600 8px ui-monospace, SFMono-Regular, Menlo, monospace;
     fill: var(--{prefix}-tick-label); }}
 /* The crossfade: the page's own background, drawn over the content.  It starts
@@ -986,7 +994,7 @@ html.sv-leaving .sv-fade {{ opacity: 1; transition: opacity 90ms ease-in; }}
 {track_css}
 </style>
 </head>
-<body{body_class}>
+<body>
 <div class="sv-fade"></div>
 <div class="sv-tip" role="tooltip" aria-hidden="true"></div>
 <noscript><style>.sv-fade {{ display: none; }}</style></noscript>
@@ -1170,11 +1178,19 @@ def _banner(counterpart: Optional[str]) -> str:
             f"{current}{other}</div></div>")
 
 
-def _plate_corner(well: Optional[Well]) -> str:
-    """The plate map, fixed to the corner opposite the view toggle."""
+def _plate_row(well: Optional[Well]) -> str:
+    """The plate map, right-aligned over the content it belongs to."""
     if well is None:
         return ""
-    return f'<div class="sv-plate-fixed">{plate_svg(well, "sv")}</div>'
+    return f'<div class="sv-plate-row">{plate_svg(well, "sv")}</div>'
+
+
+def _well_chip(well: Optional[Well]) -> str:
+    """The well's name beside the group's, for a reader who skips the map."""
+    if well is None:
+        return ""
+    return (f'<span class="sv-well" title="Well {_e(well.label)} of a '
+            f'{well.plate}-well plate">{_e(well.label)}</span>')
 
 
 def render_summary(view: SummaryView, max_lanes: int = 2,
@@ -1228,7 +1244,7 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
 
     # No heading: the group's own line carries its name, its reads and its
     # depth, and the document title names the reference for a bookmark or a tab.
-    head = f"{_banner(pileup_href)}{_plate_corner(view.well)}{highlighted}{dropped}"
+    head = f"{_banner(pileup_href)}{_plate_row(view.well)}{highlighted}{dropped}"
 
     # The reference is drawn once and placed between each group's disagreement
     # track and its reads, so the coordinate both are read against sits between
@@ -1251,7 +1267,8 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
         sections.append(
             '<div class="sv-group">'
             f'<div class="sv-group-head"><span class="sv-name">'
-            f"{_e(group.name)}{star}</span>{_chip(group)}{status}</div>"
+            f"{_e(group.name)}{star}</span>{_well_chip(view.well)}"
+            f"{_chip(group)}{status}</div>"
             f'<div class="sv-facts">{_facts(group, view)}</div>'
             f'<div class="sv-stack">'
             f"{_upper_svg(group, view, cell_w)}"

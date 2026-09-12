@@ -206,13 +206,20 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
             '<span class="sv-view" aria-current="page">Pileup</span>'
             "</div></div>"
         )
-    # The plate map takes the opposite corner from the view toggle, fixed the
-    # same way, so the two pages agree about where a reader finds it.
-    plate_corner = ""
+    # The plate map goes over the masthead, right-aligned to the content, and
+    # the well's name beside the title for a reader who skips the map.  The
+    # tab carries it too: a plate's worth of these are open at once and the
+    # reference name is the same on every one.
+    plate_row = well_chip = ""
+    tab_title = title
     if view.well is not None:
-        plate_corner = (f'<div class="sv-plate-fixed">'
-                        f"{plate_svg(view.well, 'sv')}</div>")
-    body_class = ' class="sv-plated"' if view.well is not None else ""
+        plate_row = (f'<div class="sv-plate-row">'
+                     f"{plate_svg(view.well, 'sv')}</div>")
+        well_chip = (f'<span class="sv-well" title="Well '
+                     f'{_html.escape(view.well.label)} of a '
+                     f'{view.well.plate}-well plate">'
+                     f"{_html.escape(view.well.label)}</span>")
+        tab_title = f"{title} · {view.well.label}"
 
     _theme = view.theme
     _p = _theme.css_prefix
@@ -646,7 +653,7 @@ def render(view: PileupView, summary_href: Optional[str] = None) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_html.escape(title)}</title>
+<title>{_html.escape(tab_title)}</title>
 <style id="{_style_id}">
 {palette_css}
 {pileup_css}
@@ -659,12 +666,12 @@ var SV_PALETTE = {palette_js};
 {pileup_js}
 </script>
 </head>
-<body{body_class}>
-{summary_link}{plate_corner}<div class="sv-fade"></div>
+<body>
+{summary_link}<div class="sv-fade"></div>
 <noscript><style>.sv-fade {{ display: none; }}</style></noscript>
-<div class="sv-panel">
+{plate_row}<div class="sv-panel">
     <div class="sv-panel-id">
-        {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{head_chip}</div>
+        {eyebrow}<div class="sv-idline"><span class="sv-name">{head_name}</span>{well_chip}{head_chip}</div>
         <div class="sv-facts">{head_facts}</div>
         {highlight_line}
     </div>
