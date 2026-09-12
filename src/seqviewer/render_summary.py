@@ -736,17 +736,20 @@ def _shell(view: SummaryView, palette: dict, body: str, track_css: str,
 :root {{
     --{prefix}-bg: #fafafa;
     --text: #1e293b;
-    --muted: #94a3b8;
+    /* slate-500, 4.56:1 on this ground.  The slate-400 it replaces was the
+       dark theme's value and measured 2.46:1 here, which put the facts line,
+       the ruler and every disclosure summary below AA. */
+    --muted: #64748b;
     --card-bg: #ffffff;
-    --panel-line: #dfe3e8;
+    --panel-line: #c9d2dc;
     --mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 }}
 [data-theme="dark"] {{
     --{prefix}-bg: #1a1a2e;
     --text: #e0e0e0;
-    --muted: #64748b;
+    --muted: #94a3b8;
     --card-bg: #16213e;
-    --panel-line: #2c3a55;
+    --panel-line: #46566f;
 }}
 html, body {{
     background: var(--{prefix}-bg);
@@ -825,8 +828,10 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
 .sv-mark.sv-neutral path {{ fill: var(--{prefix}-neutral); }}
 .sv-mm-rule {{ stroke: var(--{prefix}-grid); stroke-width: 1;
     stroke-dasharray: 2 3; }}
+/* The three track names. At 0.85 they measured 4.05:1; they name what each
+   row is, so they are read once and have to be legible when they are. */
 .sv-row-label {{
-    fill: var(--{prefix}-neutral); font: 9px var(--mono); opacity: 0.85;
+    fill: var(--{prefix}-neutral); font: 9px var(--mono);
 }}
 .sv-mm-tick {{
     fill: var(--{prefix}-neutral); font-size: 8px;
@@ -899,8 +904,8 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
     stroke-width: 1.2; }}
 .sv-plate-well {{ fill: var(--{prefix}-depth-edge); stroke: none; }}
 .sv-plate-here {{ fill: var(--{prefix}-tick-label); }}
-.sv-plate-title {{ font: 500 7px ui-monospace, SFMono-Regular, Menlo, monospace;
-    fill: var(--{prefix}-stem); }}
+.sv-plate-title {{ font: 500 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+    fill: var(--muted); }}
 .sv-plate-label {{ font: 600 8px ui-monospace, SFMono-Regular, Menlo, monospace;
     fill: var(--{prefix}-tick-label); }}
 /* The crossfade: the page's own background, drawn over the content.  It starts
@@ -943,7 +948,7 @@ html.sv-leaving .sv-fade {{ opacity: 1; transition: opacity 90ms ease-in; }}
 .sv-ref-label {{
     flex: 0 0 {GUTTER_PCT:.4f}%; box-sizing: border-box;
     padding-right: {LABEL_PCT:.4f}%; padding-bottom: 4px; text-align: right;
-    font: 9px var(--mono); color: var(--{prefix}-neutral); opacity: 0.85;
+    font: 9px var(--mono); color: var(--{prefix}-neutral);
     line-height: 1;
 }}
 .sv-ref-body {{ flex: 1 1 auto; min-width: 0; }}

@@ -33,7 +33,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
-from .annotate import feature_colors
+from .annotate import drawn_fill, feature_colors, label_color
 from .codon import translate_codon
 from .construct import Feature
 from .grid import Row
@@ -282,11 +282,22 @@ def window_svg(
         w = (right - left) * CELL_W
         light, dark = feature_colors(feature)
         name = feature.label or feature.type
+        # A feature's colour comes from the file, so it cannot be swapped by
+        # redefining a token.  Both fills and both label inks ride on the group
+        # as custom properties, and the stylesheet picks the pair for the
+        # theme.  The label is chosen against the glyph *as drawn* -- part
+        # transparent over the ground -- which is why the dark ink is not
+        # simply the page's text colour: filling with the light colour in both
+        # themes put near-white type on a pale glyph at 1.23:1.
+        style = (f"--{prefix}-fl:{light};--{prefix}-fd:{dark};"
+                 f"--{prefix}-ll:{label_color(drawn_fill(light, 'light', FEATURE_FILL))};"
+                 f"--{prefix}-ld:{label_color(drawn_fill(dark, 'dark', FEATURE_FILL))}")
         parts.append(
-            f'<g class="{prefix}-feat"><title>{_e(name)} '
+            f'<g class="{prefix}-feat" style="{style}">'
+            f'<title>{_e(name)} '
             f'({feature.start + 1}\u2013{feature.end})</title>'
             f'<rect x="{x:.1f}" y="{feature_y:.1f}" width="{w:.1f}" '
-            f'height="{FEATURE_H:.1f}" fill="{light}" '
+            f'height="{FEATURE_H:.1f}" '
             f'fill-opacity="{FEATURE_FILL}" rx="2" />'
         )
         # The label goes in only where it fits: a name wider than the span it
@@ -436,15 +447,22 @@ svg.{prefix} {{ display: block; max-width: 100%; height: auto; }}
 .{prefix}-pos {{ font-size: 9px; fill: var(--muted); font-family: var(--mono); }}
 .{prefix}-ref {{ fill: var(--{t}-tick-label); font-weight: 700; }}
 .{prefix}-hot {{ fill: var(--{t}-mm); opacity: 0.13; }}
+.{prefix}-feat rect {{ fill: var(--{prefix}-fl); }}
+[data-theme="dark"] .{prefix}-feat rect {{ fill: var(--{prefix}-fd); }}
 .{prefix}-featlabel {{
-    font: 600 {FEATURE_LABEL:.0f}px var(--mono); fill: var(--{t}-text);
+    font: 600 {FEATURE_LABEL:.0f}px var(--mono); fill: var(--{prefix}-ll);
 }}
-.{prefix}-same {{ fill: var(--muted); opacity: 0.42; }}
+[data-theme="dark"] .{prefix}-featlabel {{ fill: var(--{prefix}-ld); }}
+/* Bases matching the reference are context, not findings, so they recede.
+   The recession is now carried by weight and colour -- grey and regular
+   against bold and coloured -- rather than by opacity, which at 0.42 left
+   them at 1.41:1: not recessive but absent. */
+.{prefix}-same {{ fill: var(--muted); }}
 .{prefix}-b {{ font-weight: 700; }}
-.{prefix}-a {{ fill: var(--{t}-a); }}
-.{prefix}-t {{ fill: var(--{t}-t); }}
-.{prefix}-c {{ fill: var(--{t}-c); }}
-.{prefix}-g {{ fill: var(--{t}-g); }}
+.{prefix}-a {{ fill: var(--{t}-a-ink); }}
+.{prefix}-t {{ fill: var(--{t}-t-ink); }}
+.{prefix}-c {{ fill: var(--{t}-c-ink); }}
+.{prefix}-g {{ fill: var(--{t}-g-ink); }}
 .{prefix}-n {{ fill: var(--muted); }}
 .{prefix}-del {{ fill: var(--{t}-bad); }}
 .{prefix}-rdel {{ fill: var(--{t}-bad); opacity: 0.65; }}

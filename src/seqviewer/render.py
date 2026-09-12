@@ -63,11 +63,21 @@ _PALETTE = {
     "light": {
         "match": "#d4d8dc",
         "vector": "#e9ebee",
-        "gap": "#ffffff",
+        # The page's ground, so an uncovered column reads as nothing drawn.
+        "gap": "#fafafa",
         "a": "#e03131",
         "t": "#1971c2",
         "c": "#e8590c",
         "g": "#e67700",
+        # The same four as type rather than as cells.  A filled cell has only
+        # to be told from its neighbours and sits on a grey field; the variant
+        # detail sets these as 11px letters on near-white, where the orange of
+        # G measured 2.87:1.  Same hues, walked down in lightness until they
+        # carry as small text.
+        "a-ink": "#d12b2b",
+        "t-ink": "#1971c2",
+        "c-ink": "#c24a09",
+        "g-ink": "#a85700",
         "boundary": "#d97706",
         "region": "rgba(56,132,255,0.10)",
         # The focus region reads warm, tied to the boundary colour its
@@ -90,11 +100,22 @@ _PALETTE = {
     "dark": {
         "match": "#4a5568",
         "vector": "#3a4455",
-        "gap": "#ffffff",
+        # A gap is the absence of a read, so it is drawn as the page's own
+        # ground and reads as nothing being there.  White -- the light theme's
+        # value, kept here by oversight -- made every uncovered region the
+        # brightest thing on a dark page, so the eye went to where there was
+        # no data.
+        "gap": "#1a1a2e",
         "a": "#ff6b6b",
         "t": "#339af0",
         "c": "#ffa94d",
         "g": "#ffd43b",
+        # On the dark ground the cell colours already carry as type, so the
+        # inks are the same four rather than a second set to keep in step.
+        "a-ink": "#ff6b6b",
+        "t-ink": "#339af0",
+        "c-ink": "#ffa94d",
+        "g-ink": "#ffd43b",
         "boundary": "#f59e0b",
         "region": "rgba(120,170,255,0.16)",
         # The focus region reads warm, tied to the boundary colour its

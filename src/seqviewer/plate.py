@@ -34,7 +34,9 @@ _INSET = 3.0
 _CHAMFER = 5.0
 
 #: Height of the title line over the plate, and of the label line under it.
-_TITLE_H = 11.0
+#: Both hold 8px type: 7px measured legible only at full size, and the map is
+#: drawn at whatever width its corner allows.
+_TITLE_H = 12.0
 _LABEL_H = 11.0
 
 _WELL_RE = re.compile(r"^([A-Za-z])0*([1-9][0-9]?)$")

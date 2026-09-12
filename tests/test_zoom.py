@@ -221,8 +221,12 @@ def test_the_prefix_keeps_two_windows_from_colliding():
 
 
 def test_css_follows_the_hosts_token_prefix():
-    assert "var(--app-a)" in window_css(token_prefix="app")
-    assert "var(--cv-a)" in window_css()
+    css = window_css(token_prefix="app")
+    # The letters are set in the ink variants rather than the cell colours:
+    # the same four hues walked down until they carry as 11px type.
+    assert "var(--app-a-ink)" in css
+    assert "var(--app-tick-label)" in css
+    assert "var(--cv-a-ink)" in window_css()
 
 
 def test_a_window_reports_its_own_geometry():

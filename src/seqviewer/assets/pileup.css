@@ -1,10 +1,14 @@
 :root {
     --__PREFIX__-bg: #fafafa;
     --text: #1e293b;
-    --muted: #94a3b8;
+    /* Supporting text, and most of what the page says outside the plot: read
+       counts, tick labels, row names, disclosure summaries.  slate-500 on this
+       ground is 4.56:1; the slate-400 this replaced was 2.46:1, which is the
+       dark theme's value and unreadable here. */
+    --muted: #64748b;
     --card-bg: #ffffff;
-    --border: #e5e7eb;
-    --panel-line: #dfe3e8;
+    --border: #d7dde5;
+    --panel-line: #c9d2dc;
     --ok: #0f7a52;
     --ok-bg: #e8f6ef;
     --warn: #a1650a;
@@ -22,10 +26,12 @@
 [data-theme="dark"] {
     --__PREFIX__-bg: #1a1a2e;
     --text: #e0e0e0;
-    --muted: #64748b;
+    /* The mirror of the light value: slate-400 is 6.65:1 here where slate-500
+       was 3.58:1.  The two themes had each other's greys. */
+    --muted: #94a3b8;
     --card-bg: #16213e;
-    --border: #334155;
-    --panel-line: #2c3a55;
+    --border: #3b4a63;
+    --panel-line: #46566f;
     --ok: #35c493;
     --ok-bg: #14312a;
     --warn: #e0a355;
@@ -195,7 +201,7 @@ body {
    grid vanishes, leaving a box with one dot that reads as no plate at all. */
 .sv-plate-well { fill: var(--border); stroke: none; }
 .sv-plate-here { fill: var(--text); }
-.sv-plate-title { font: 500 7px var(--mono); fill: var(--muted); }
+.sv-plate-title { font: 500 8px var(--mono); fill: var(--muted); }
 .sv-plate-label { font: 600 8px var(--mono); fill: var(--text); }
 /* The crossfade: the page's own background, drawn over the content.  It starts
    opaque and clears once the page reports it has drawn, so the reader never
