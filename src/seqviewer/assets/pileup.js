@@ -249,9 +249,20 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     gapSpacer2.style.height = gap + 'px';
     labelsEl.appendChild(gapSpacer2);
     if (nRows > 0) {
+      // The span is as tall as the matrix -- a few thousand pixels on a deep
+      // run -- so a centred label is off-screen for most of the scroll and
+      // absent exactly where the rows stop being self-evident.  The text goes
+      // in a box of its own so that box can be stuck to the top of the
+      // viewport: a sticky element taller than the viewport cannot pin, and
+      // the span has to keep its full height to space the column.  Every
+      // other label spans one short band and needs neither.
       var readsLabel = document.createElement('span');
-      readsLabel.textContent = 'Reads';
+      readsLabel.className = 'pileup-label-reads';
       readsLabel.style.height = (nRows * cellH) + 'px';
+      var readsText = document.createElement('i');
+      readsText.textContent = 'Reads';
+      readsText.title = 'One row per read, ordered as --order asks.';
+      readsLabel.appendChild(readsText);
       labelsEl.appendChild(readsLabel);
     }
     if (hasAA) {

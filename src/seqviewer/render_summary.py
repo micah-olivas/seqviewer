@@ -581,7 +581,10 @@ def _chip(group: GroupSummary) -> str:
 
 
 def _facts(group: GroupSummary, view: SummaryView) -> str:
-    facts = []
+    # Opens on the reference length, as the pileup's line does, so the two
+    # read the same from the left for as far as both pages know the same
+    # things.  Only the mean depth at the end is this page's alone.
+    facts = [f"<b>{group.ref_len}</b> bp reference"]
     if group.n_reads and view.total_reads:
         facts.append(f"<b>{group.n_reads}</b> of <b>{view.total_reads}</b> reads")
     elif group.n_reads:
@@ -763,7 +766,10 @@ body {{
     /* Room at the top for the fixed view toggle, and no more. */
     padding: 2.7rem 1.5rem 1.5rem;
 }}
-.sv-wrap {{ max-width: 760px; margin: 0 auto; }}
+/* Left-aligned on the same gutter the pileup indents by, rather than
+   centred: the two pages are toggled between, and a centred column put the
+   name 237px from where the pileup puts it. */
+.sv-wrap {{ max-width: 760px; margin-left: calc(2.5rem + 4px); }}
 h1 {{ font-size: 1.3rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }}
 .sv-sub {{ color: var(--muted); font-size: 0.85rem; margin-bottom: 1.1rem; }}
 .sv-panel {{
@@ -785,9 +791,11 @@ h1 {{ font-size: 1.3rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }}
     display: flex; align-items: baseline; gap: 0.6rem;
     flex-wrap: wrap; margin-bottom: 0.15rem;
 }}
-.sv-name {{ font-size: 1.02rem; font-weight: 700; }}
+.sv-name {{ font-size: 1.15rem; font-weight: 700;
+    letter-spacing: -0.01em; }}
 .sv-star {{ color: var(--{prefix}-warn); cursor: help; }}
-.sv-facts {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.4rem; }}
+.sv-facts {{ font: 0.78rem/1.55 var(--mono); color: var(--muted);
+    font-variant-numeric: tabular-nums; margin-bottom: 0.4rem; }}
 .sv-chip {{
     font: 600 0.7rem/1 var(--mono);
     padding: 0.22rem 0.45rem;
@@ -892,7 +900,7 @@ svg.sv-band, svg.sv-map, svg.sv-annot {{
     z-index: 25; }}
 /* --- Plate map: in the flow, right-aligned over the content it places. --- */
 .sv-plate-row {{ display: flex; justify-content: flex-end;
-    margin: 0 0 0.5rem; line-height: 0; }}
+    margin: 1.4rem 0 0.6rem; line-height: 0; }}
 .sv-plate {{ display: block; }}
 .sv-well {{ font: 600 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--{prefix}-tick-label); margin-left: 0.55rem;
