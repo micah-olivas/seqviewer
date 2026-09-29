@@ -554,6 +554,9 @@ html.sv-leaving .sv-fade {
    hovered column boxed and changes in the colour the rows use for them. */
 .pileup-loupe {
     position: fixed;
+    left: 0;
+    top: 0;
+    will-change: transform;
     display: none;
     z-index: 11;
     pointer-events: none;
@@ -565,32 +568,85 @@ html.sv-leaving .sv-fade {
     font-family: var(--mono);
     color: var(--text);
 }
-.pileup-loupe-grid {
-    display: grid;
-    align-items: center;
-    row-gap: 1px;
+.pileup-loupe-body { display: flex; align-items: flex-start; }
+.pileup-loupe-names, .pileup-loupe-track {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
 }
-.pileup-loupe-name {
-    padding-right: 8px;
+.pileup-loupe-names { padding-right: 8px; }
+.pileup-loupe-names span {
     font-size: 9px;
     color: var(--muted);
     text-align: right;
 }
-.pileup-loupe-aa {
-    height: 1.35em;
-    line-height: 1.35em;
+.pileup-loupe-names .pileup-loupe-nt { font-size: 8px; opacity: 0.7; }
+/* The ref codon and the cons codon read as a pair, but the two residues they
+   sit between are what is compared, so the pair is split a little. */
+.pileup-loupe-names .split, .pileup-loupe-row.split { margin-top: 2px; }
+/* The window the strip slides under. Its ends fade to a trace rather than to
+   nothing, so residues ease out of view and still say the strip goes on. */
+.pileup-loupe-view {
+    position: relative;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right,
+        rgba(0, 0, 0, 0.12) 0, #000 20%, #000 80%, rgba(0, 0, 0, 0.12) 100%);
+    mask-image: linear-gradient(to right,
+        rgba(0, 0, 0, 0.12) 0, #000 20%, #000 80%, rgba(0, 0, 0, 0.12) 100%);
+}
+.pileup-loupe-track {
+    width: max-content;
+    will-change: transform;
+}
+.pileup-loupe-row { display: flex; }
+.pileup-loupe-aa, .pileup-loupe-nt, .pileup-loupe-num {
+    flex: none;
+    width: var(--loupe-cell);
+    height: 19px;
+    line-height: 19px;
+}
+.pileup-loupe-row > .pileup-loupe-aa {
     text-align: center;
     font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
+    font-weight: 500;
+    color: var(--text);
     border-radius: 2px;
 }
-.pileup-loupe-aa.diff { color: var(--bad); background: var(--bad-bg); }
-.pileup-loupe-aa.at {
-    color: var(--text);
-    box-shadow: inset 0 0 0 1px var(--text);
+/* The ruler: a tick under every residue's number, a number on every fifth. */
+.pileup-loupe-num { height: 13px; line-height: 9px; }
+.pileup-loupe-row > .pileup-loupe-num {
+    position: relative;
+    text-align: center;
+    font-size: 8px;
+    color: transparent;
 }
-.pileup-loupe-aa.at.diff { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.pileup-loupe-row > .pileup-loupe-num.major { color: var(--muted); }
+.pileup-loupe-row > .pileup-loupe-num::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 1px;
+    height: 2px;
+    background: var(--muted);
+    opacity: 0.6;
+}
+.pileup-loupe-row > .pileup-loupe-num.major::after { height: 3px; opacity: 1; }
+.pileup-loupe-row > .pileup-loupe-aa.diff {
+    color: var(--bad);
+    background: var(--bad-bg);
+}
+.pileup-loupe-nt { height: 12px; line-height: 12px; }
+.pileup-loupe-row > .pileup-loupe-nt {
+    display: flex;
+    justify-content: center;
+    font-size: 9.5px;
+    color: var(--muted);
+    opacity: 0.8;
+}
+.pileup-loupe-nt i { font-style: normal; width: 0.62em; text-align: center; }
+.pileup-loupe-nt i.mm { font-weight: 700; }
+.pileup-loupe-nt i.gap { opacity: 0.6; }
 .pileup-loupe-foot {
     margin-top: 4px;
     font-size: 10px;
@@ -601,6 +657,9 @@ html.sv-leaving .sv-fade {
 /* The codons the loupe is showing, framed on the canvas under it. */
 .pileup-lens {
     position: fixed;
+    left: 0;
+    top: 0;
+    will-change: transform;
     display: none;
     z-index: 10;
     pointer-events: none;

@@ -584,37 +584,36 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
 
   /* The residue loupe. At 2px a base a codon is 6px, which holds a tick and
    * not a letter, so the AA rows say "changed here" without saying to what.
-   * Hovering them opens a magnified strip of the residues either side of the
-   * pointer, every AA row at once, so a change reads against its neighbours
-   * and against the other rows in one look. A frame on the canvas marks the
-   * codons the strip is showing, which is what makes it a lens rather than a
-   * tooltip that happens to be wide.
+   * Hovering them opens a magnified strip around the pointer: every AA row,
+   * and between the reference and consensus residues the codons they were
+   * read from, so a change reads against its neighbours, against the other
+   * rows, and against the bases that made it, in one look. A frame on the
+   * canvas marks the codons the strip is showing.
+   *
+   * The strip glides rather than stepping. It is the whole protein, built once,
+   * and only its offset changes, so crossing a residue rewrites nothing. The
+   * offset eases toward the pointer on every animation frame rather than on
+   * every mouse event, so it moves at the display's refresh rate and a codon's
+   * 6px of pointer travel becomes a slide across the strip, not a few jumps.
+   * The ends of the window fade to a trace, so residues ease out of view.
    *
    * Built from DOM rather than drawn, so the letters are crisp at any zoom and
-   * take the page's theme from its own variables.
+   * take the page's theme from its own variables. Mismatched bases take the
+   * pileup's own base colours, so a base reads the same in the lens as under it.
    */
-  var LOUPE_HALF = 6;
-  var loupe = null, lens = null, loupeAt = -1;
-  function buildLoupe() {
-    loupe = document.createElement('div');
-    loupe.className = 'pileup-loupe';
-    var names = ['Ref', 'Cons', 'Parent'];
-    var html = '<div class="pileup-loupe-grid" style="grid-template-columns:'
-      + 'auto repeat(' + (2 * LOUPE_HALF + 1) + ',1.15em)">';
-    for (var r = 0; r < aaRows; r++) {
-      html += '<span class="pileup-loupe-name">' + names[r] + '</span>';
-      for (var k = 0; k < 2 * LOUPE_HALF + 1; k++) {
-        html += '<span class="pileup-loupe-aa' + (k === LOUPE_HALF ? ' at' : '')
-          + '"></span>';
-      }
-    }
-    html += '</div><div class="pileup-loupe-foot"></div>';
-    loupe.innerHTML = html;
-    document.body.appendChild(loupe);
-    lens = document.createElement('div');
-    lens.className = 'pileup-lens';
-    document.body.appendChild(lens);
-  }
+  var LOUPE_HALF = 5, LOUPE_CELL = 26, LOUPE_EASE_MS = 28;
+  var LOUPE_SPAN = 2 * LOUPE_HALF + 1;
+  // A ruler of residue numbers, the ref residue, the two codons, then the
+  // consensus residue under them, so each residue sits against the codon it
+  // translates. The parent is last, as it is on the canvas.
+  var loupeRows = [{num: true, name: ''}, {aa: 0, name: 'Ref'},
+                   {nt: null, name: 'nt'}, {nt: cons, name: 'nt', split: true},
+                   {aa: 1, name: 'Cons'}];
+  if (hasParentAA) loupeRows.push({aa: 2, name: 'Parent'});
+  var loupe = null, lens = null, loupeTrack = null, loupeFoot = null;
+  var loupeAt = -1, loupeOn = false, loupeW = 0, loupeH = 0, loupeViewX = 0;
+  var loupePos = 0, loupeGoal = 0, loupeFrame = 0, loupeLast = 0;
+  var loupeRect = null, loupeWrap = null;
   function codonAt(i, seq) {
     var s = flanks[0] + 3 * i, out = '';
     for (var k = s; k < s + 3 && k < nCols; k++) {
@@ -623,58 +622,151 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     }
     return out;
   }
-  function hideLoupe() {
-    if (loupe) { loupe.style.display = 'none'; lens.style.display = 'none'; }
-    loupeAt = -1;
+  // One codon as three bases, each coloured by the pileup's rule: quiet where
+  // it matches the reference, its own base colour where it does not.
+  function codonHTML(i, seq) {
+    var s = flanks[0] + 3 * i, out = '';
+    for (var k = s; k < s + 3; k++) {
+      if (k >= nCols) { out += '<i></i>'; continue; }
+      var ch = seq ? seq[k] : refSeq[k];
+      if (!seq || ch === '.' || ch === undefined) {
+        out += '<i>' + refSeq[k] + '</i>';
+      } else if (ch === '-') {
+        out += '<i class="gap">&ndash;</i>';
+      } else {
+        out += '<i class="mm" style="color:' + (baseColors[ch] || P.flag)
+          + '">' + ch + '</i>';
+      }
+    }
+    return out;
   }
-  function showLoupe(aaIdx, e) {
-    if (!loupe) buildLoupe();
+  function buildLoupe() {
     var seqs = [refAA, consAA, parentAA];
-    if (aaIdx !== loupeAt) {
-      loupeAt = aaIdx;
-      var cells = loupe.querySelectorAll('.pileup-loupe-aa');
-      var per = 2 * LOUPE_HALF + 1;
-      for (var r = 0; r < aaRows; r++) {
-        for (var k = 0; k < per; k++) {
-          var i = aaIdx - LOUPE_HALF + k;
-          var cell = cells[r * per + k];
-          var inside = i >= 0 && i < refAA.length;
-          var aa = inside ? seqs[r][i] : '';
+    var n = refAA.length, names = '', track = '';
+    for (var r = 0; r < loupeRows.length; r++) {
+      var spec = loupeRows[r];
+      var kind = spec.num ? 'num' : spec.nt !== undefined ? 'nt' : 'aa';
+      var split = spec.split ? ' split' : '';
+      names += '<span class="pileup-loupe-' + kind + split + '">'
+        + spec.name + '</span>';
+      track += '<div class="pileup-loupe-row' + split + '">';
+      for (var i = 0; i < n; i++) {
+        var body, extra = '';
+        if (kind === 'num') {
+          // A tick on every residue, a number on every fifth.
+          body = i + 1;
+          if ((i + 1) % 5 === 0 || i === 0) extra = ' major';
+        } else if (kind === 'nt') {
+          body = codonHTML(i, spec.nt);
+        } else {
+          var aa = seqs[spec.aa][i];
           // Marked by the rule the rows are drawn with: ref and cons against
           // each other, the parent against the consensus built from it.
-          var diff = inside && (r === 2 ? aa !== consAA[i] : refAA[i] !== consAA[i]);
-          cell.textContent = aa === undefined ? '?' : aa;
-          cell.classList.toggle('diff', !!diff);
+          if (spec.aa === 2 ? aa !== consAA[i] : refAA[i] !== consAA[i]) {
+            extra = ' diff';
+          }
+          body = aa === undefined ? '?' : aa;
         }
+        track += '<span class="pileup-loupe-' + kind + extra + '">'
+          + body + '</span>';
       }
-      var nt = flanks[0] + 3 * aaIdx + 1;
-      var was = codonAt(aaIdx), now = codonAt(aaIdx, cons);
-      var change = refAA[aaIdx] + (aaIdx + 1) + consAA[aaIdx];
-      loupe.querySelector('.pileup-loupe-foot').innerHTML =
-        '<b>' + (refAA[aaIdx] === consAA[aaIdx] ? refAA[aaIdx] + (aaIdx + 1) : change)
-        + '</b> &middot; ' + (was === now ? was : was + ' &rarr; ' + now)
-        + ' &middot; nt ' + nt + '&ndash;' + (nt + 2);
+      track += '</div>';
     }
-    var rect = canvas.getBoundingClientRect();
-    var wrap = canvas.parentNode.getBoundingClientRect();
+    loupe = document.createElement('div');
+    loupe.className = 'pileup-loupe';
+    loupe.style.setProperty('--loupe-cell', LOUPE_CELL + 'px');
+    loupe.innerHTML = '<div class="pileup-loupe-body">'
+      + '<div class="pileup-loupe-names">' + names + '</div>'
+      + '<div class="pileup-loupe-view" style="width:' + LOUPE_SPAN * LOUPE_CELL
+      + 'px"><div class="pileup-loupe-track">' + track + '</div></div></div>'
+      + '<div class="pileup-loupe-foot"></div>';
+    loupeTrack = loupe.querySelector('.pileup-loupe-track');
+    loupeFoot = loupe.querySelector('.pileup-loupe-foot');
+    document.body.appendChild(loupe);
+    lens = document.createElement('div');
+    lens.className = 'pileup-lens';
+    document.body.appendChild(lens);
+  }
+  function hideLoupe() {
+    if (loupe) { loupe.style.display = 'none'; lens.style.display = 'none'; }
+    if (loupeFrame) cancelAnimationFrame(loupeFrame);
+    loupeFrame = 0; loupeOn = false;
+  }
+  // Name the residue under the pointer below the strip. Runs only when the
+  // pointer crosses into another residue, not on every frame.
+  function loupeMark(aaIdx) {
+    loupeAt = aaIdx;
+    var nt = flanks[0] + 3 * aaIdx + 1;
+    var was = codonAt(aaIdx), now = codonAt(aaIdx, cons);
+    loupeFoot.innerHTML = '<b>' + refAA[aaIdx] + (aaIdx + 1)
+      + (refAA[aaIdx] === consAA[aaIdx] ? '' : consAA[aaIdx])
+      + '</b> &middot; ' + (was === now ? was : was + ' &rarr; ' + now)
+      + ' &middot; nt ' + nt + '&ndash;' + (nt + 2);
+  }
+  // Place everything at pos, the pointer in residues from the start of the
+  // insert, fractional: 49.5 is the middle of residue 50. Transforms only, so
+  // a frame costs no layout.
+  function loupePlace(pos) {
+    var aaIdx = Math.min(refAA.length - 1, Math.max(0, Math.floor(pos)));
+    if (aaIdx !== loupeAt) loupeMark(aaIdx);
+    loupeTrack.style.transform = 'translate3d('
+      + (LOUPE_SPAN / 2 - pos) * LOUPE_CELL + 'px,0,0)';
+
+    var at = loupeRect.left + flanks[0] * cellW + pos * aaCodonW;
     // The lens is clipped to the scroller, so it never frames codons that have
     // scrolled out from under the gutter.
-    var lx = rect.left + (flanks[0] + (aaIdx - LOUPE_HALF) * 3) * cellW;
-    var rx = lx + (2 * LOUPE_HALF + 1) * aaCodonW;
-    lx = Math.max(lx, wrap.left); rx = Math.min(rx, wrap.right);
-    lens.style.display = 'block';
-    lens.style.left = lx + 'px';
+    var half = LOUPE_SPAN / 2 * aaCodonW;
+    var lx = Math.max(at - half, loupeWrap.left);
+    var rx = Math.min(at + half, loupeWrap.right);
     lens.style.width = Math.max(0, rx - lx) + 'px';
-    lens.style.top = (rect.top + aaY - 2) + 'px';
-    lens.style.height = (aaBlockH + 4) + 'px';
+    lens.style.transform = 'translate3d(' + lx + 'px,'
+      + (loupeRect.top + aaY - 2) + 'px,0)';
 
-    loupe.style.display = 'block';
-    var w = loupe.offsetWidth, h = loupe.offsetHeight;
-    var left = Math.min(Math.max(8, e.clientX - w / 2), window.innerWidth - w - 8);
-    var top = rect.top + aaY - h - 10;
-    if (top < 8) top = rect.top + aaY + aaBlockH + 10;
-    loupe.style.left = left + 'px';
-    loupe.style.top = top + 'px';
+    // Centred on the window, not the card, so the magnified residue sits
+    // directly over the codon it came from.
+    var left = Math.min(Math.max(8, at - loupeViewX),
+                        window.innerWidth - loupeW - 8);
+    var top = loupeRect.top + aaY - loupeH - 10;
+    if (top < 8) top = loupeRect.top + aaY + aaBlockH + 10;
+    loupe.style.transform = 'translate3d(' + left + 'px,' + top + 'px,0)';
+  }
+  // Ease toward the pointer, framerate-independent: the same time constant at
+  // 60Hz and at 120Hz, so a faster display is smoother, not faster.
+  function loupeTick(now) {
+    var dt = loupeLast ? Math.min(64, now - loupeLast) : 16;
+    loupeLast = now;
+    var gap = loupeGoal - loupePos;
+    if (Math.abs(gap) < 0.002) {
+      loupePos = loupeGoal;
+    } else {
+      loupePos += gap * (1 - Math.exp(-dt / LOUPE_EASE_MS));
+    }
+    loupePlace(loupePos);
+    loupeFrame = loupePos === loupeGoal ? 0 : requestAnimationFrame(loupeTick);
+  }
+  function showLoupe(pos) {
+    if (!loupe) buildLoupe();
+    loupeRect = canvas.getBoundingClientRect();
+    loupeWrap = canvas.parentNode.getBoundingClientRect();
+    loupeGoal = pos;
+    if (!loupeOn) {
+      // Opens where the pointer is, rather than gliding in from wherever it
+      // last closed.
+      loupeOn = true;
+      loupe.style.display = 'block';
+      lens.style.display = 'block';
+      lens.style.height = (aaBlockH + 4) + 'px';
+      loupeW = loupe.offsetWidth; loupeH = loupe.offsetHeight;
+      var view = loupe.querySelector('.pileup-loupe-view');
+      loupeViewX = view.offsetLeft + LOUPE_SPAN / 2 * LOUPE_CELL;
+      loupePos = pos;
+      loupePlace(pos);
+      return;
+    }
+    if (!loupeFrame) {
+      loupeLast = 0;
+      loupeFrame = requestAnimationFrame(loupeTick);
+    }
   }
   if (hasAA) {
     window.addEventListener('scroll', hideLoupe, true);
@@ -685,7 +777,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     var x = e.clientX - rect.left;
     var yp = e.clientY - rect.top;
     var col = Math.floor(x / cellW);
-    if (loupeAt !== -1 && !(yp >= aaY && yp < aaY + aaBlockH)) hideLoupe();
+    if (loupeOn && !(yp >= aaY && yp < aaY + aaBlockH)) hideLoupe();
     if (col < 0 || col >= nCols) { tooltip.style.display = 'none'; return; }
     var rl = regionLabel(col);
     if (yp < refH) {
@@ -700,9 +792,9 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       // Derived from the drawn geometry, not from the nucleotide rate: reading
       // the residue index a different way than it was placed is what made the
       // tooltip name a third, differently wrong residue.
-      var aaIdx = Math.floor((x - insStart * cellW) / aaCodonW);
+      var aaPos = (x - insStart * cellW) / aaCodonW;
       tooltip.style.display = 'none';
-      if (aaIdx >= 0 && aaIdx < refAA.length) showLoupe(aaIdx, e);
+      if (aaPos >= 0 && aaPos < refAA.length) showLoupe(aaPos);
       else hideLoupe();
       return;
     } else if (yp >= readsY && yp < readsY + nRows * cellH) {

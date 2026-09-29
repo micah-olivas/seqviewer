@@ -718,13 +718,19 @@ def test_a_missing_change_is_drawn_with_a_dashed_edge():
 
 
 def test_hovering_the_amino_acid_rows_opens_the_loupe_over_all_of_them():
-    """A 6px codon holds no letter, so hovering magnifies every AA row at once."""
+    """A 6px codon holds no letter, so hovering magnifies every AA row at once,
+    with the codons between the reference and consensus residues."""
     html = render(_parent_view())
-    assert "var names = ['Ref', 'Cons', 'Parent'];" in html
-    assert "for (var r = 0; r < aaRows; r++)" in html
-    assert "showLoupe(aaIdx, e)" in html
+    assert "if (hasParentAA) loupeRows.push({aa: 2, name: 'Parent'});" in html
+    assert "{nt: null, name: 'nt'}" in html and "{nt: cons, name: 'nt'," in html
+    # A ruler of residue numbers above the reference residues.
+    assert "[{num: true, name: ''}, {aa: 0, name: 'Ref'}," in html
+    # The pointer's fractional position drives the strip, eased per frame.
+    assert "showLoupe(aaPos)" in html
+    assert "(LOUPE_SPAN / 2 - pos) * LOUPE_CELL" in html
+    assert "requestAnimationFrame(loupeTick)" in html
     # The parent row is marked against the consensus, as it is drawn.
-    assert "r === 2 ? aa !== consAA[i]" in html
+    assert "spec.aa === 2 ? aa !== consAA[i]" in html
     assert ".pileup-loupe-aa.diff" in html
 
 
