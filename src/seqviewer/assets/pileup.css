@@ -548,3 +548,63 @@ html.sv-leaving .sv-fade {
     color: var(--muted);
     white-space: nowrap;
 }
+/* --- Residue loupe: the AA rows magnified around the pointer ---
+   A card rather than the dark tooltip, because it is read, not glanced at: a
+   strip of residues either side of the hovered codon, one line per AA row, the
+   hovered column boxed and changes in the colour the rows use for them. */
+.pileup-loupe {
+    position: fixed;
+    display: none;
+    z-index: 11;
+    pointer-events: none;
+    padding: 6px 9px 5px;
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+    font-family: var(--mono);
+    color: var(--text);
+}
+.pileup-loupe-grid {
+    display: grid;
+    align-items: center;
+    row-gap: 1px;
+}
+.pileup-loupe-name {
+    padding-right: 8px;
+    font-size: 9px;
+    color: var(--muted);
+    text-align: right;
+}
+.pileup-loupe-aa {
+    height: 1.35em;
+    line-height: 1.35em;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    border-radius: 2px;
+}
+.pileup-loupe-aa.diff { color: var(--bad); background: var(--bad-bg); }
+.pileup-loupe-aa.at {
+    color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--text);
+}
+.pileup-loupe-aa.at.diff { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.pileup-loupe-foot {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.pileup-loupe-foot b { color: var(--text); font-weight: 600; }
+/* The codons the loupe is showing, framed on the canvas under it. */
+.pileup-lens {
+    position: fixed;
+    display: none;
+    z-index: 10;
+    pointer-events: none;
+    border: 1px solid var(--text);
+    border-radius: 2px;
+    opacity: 0.55;
+}

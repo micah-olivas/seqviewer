@@ -581,11 +581,111 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
     + 'border-radius:4px;font-size:11px;pointer-events:none;display:none;z-index:10;'
     + 'font-family:SF Mono,Menlo,Consolas,monospace;';
   document.body.appendChild(tooltip);
+
+  /* The residue loupe. At 2px a base a codon is 6px, which holds a tick and
+   * not a letter, so the AA rows say "changed here" without saying to what.
+   * Hovering them opens a magnified strip of the residues either side of the
+   * pointer, every AA row at once, so a change reads against its neighbours
+   * and against the other rows in one look. A frame on the canvas marks the
+   * codons the strip is showing, which is what makes it a lens rather than a
+   * tooltip that happens to be wide.
+   *
+   * Built from DOM rather than drawn, so the letters are crisp at any zoom and
+   * take the page's theme from its own variables.
+   */
+  var LOUPE_HALF = 6;
+  var loupe = null, lens = null, loupeAt = -1;
+  function buildLoupe() {
+    loupe = document.createElement('div');
+    loupe.className = 'pileup-loupe';
+    var names = ['Ref', 'Cons', 'Parent'];
+    var html = '<div class="pileup-loupe-grid" style="grid-template-columns:'
+      + 'auto repeat(' + (2 * LOUPE_HALF + 1) + ',1.15em)">';
+    for (var r = 0; r < aaRows; r++) {
+      html += '<span class="pileup-loupe-name">' + names[r] + '</span>';
+      for (var k = 0; k < 2 * LOUPE_HALF + 1; k++) {
+        html += '<span class="pileup-loupe-aa' + (k === LOUPE_HALF ? ' at' : '')
+          + '"></span>';
+      }
+    }
+    html += '</div><div class="pileup-loupe-foot"></div>';
+    loupe.innerHTML = html;
+    document.body.appendChild(loupe);
+    lens = document.createElement('div');
+    lens.className = 'pileup-lens';
+    document.body.appendChild(lens);
+  }
+  function codonAt(i, seq) {
+    var s = flanks[0] + 3 * i, out = '';
+    for (var k = s; k < s + 3 && k < nCols; k++) {
+      var ch = seq ? seq[k] : refSeq[k];
+      out += (ch === '.' || ch === undefined) ? refSeq[k] : ch;
+    }
+    return out;
+  }
+  function hideLoupe() {
+    if (loupe) { loupe.style.display = 'none'; lens.style.display = 'none'; }
+    loupeAt = -1;
+  }
+  function showLoupe(aaIdx, e) {
+    if (!loupe) buildLoupe();
+    var seqs = [refAA, consAA, parentAA];
+    if (aaIdx !== loupeAt) {
+      loupeAt = aaIdx;
+      var cells = loupe.querySelectorAll('.pileup-loupe-aa');
+      var per = 2 * LOUPE_HALF + 1;
+      for (var r = 0; r < aaRows; r++) {
+        for (var k = 0; k < per; k++) {
+          var i = aaIdx - LOUPE_HALF + k;
+          var cell = cells[r * per + k];
+          var inside = i >= 0 && i < refAA.length;
+          var aa = inside ? seqs[r][i] : '';
+          // Marked by the rule the rows are drawn with: ref and cons against
+          // each other, the parent against the consensus built from it.
+          var diff = inside && (r === 2 ? aa !== consAA[i] : refAA[i] !== consAA[i]);
+          cell.textContent = aa === undefined ? '?' : aa;
+          cell.classList.toggle('diff', !!diff);
+        }
+      }
+      var nt = flanks[0] + 3 * aaIdx + 1;
+      var was = codonAt(aaIdx), now = codonAt(aaIdx, cons);
+      var change = refAA[aaIdx] + (aaIdx + 1) + consAA[aaIdx];
+      loupe.querySelector('.pileup-loupe-foot').innerHTML =
+        '<b>' + (refAA[aaIdx] === consAA[aaIdx] ? refAA[aaIdx] + (aaIdx + 1) : change)
+        + '</b> &middot; ' + (was === now ? was : was + ' &rarr; ' + now)
+        + ' &middot; nt ' + nt + '&ndash;' + (nt + 2);
+    }
+    var rect = canvas.getBoundingClientRect();
+    var wrap = canvas.parentNode.getBoundingClientRect();
+    // The lens is clipped to the scroller, so it never frames codons that have
+    // scrolled out from under the gutter.
+    var lx = rect.left + (flanks[0] + (aaIdx - LOUPE_HALF) * 3) * cellW;
+    var rx = lx + (2 * LOUPE_HALF + 1) * aaCodonW;
+    lx = Math.max(lx, wrap.left); rx = Math.min(rx, wrap.right);
+    lens.style.display = 'block';
+    lens.style.left = lx + 'px';
+    lens.style.width = Math.max(0, rx - lx) + 'px';
+    lens.style.top = (rect.top + aaY - 2) + 'px';
+    lens.style.height = (aaBlockH + 4) + 'px';
+
+    loupe.style.display = 'block';
+    var w = loupe.offsetWidth, h = loupe.offsetHeight;
+    var left = Math.min(Math.max(8, e.clientX - w / 2), window.innerWidth - w - 8);
+    var top = rect.top + aaY - h - 10;
+    if (top < 8) top = rect.top + aaY + aaBlockH + 10;
+    loupe.style.left = left + 'px';
+    loupe.style.top = top + 'px';
+  }
+  if (hasAA) {
+    window.addEventListener('scroll', hideLoupe, true);
+  }
+
   canvas.addEventListener('mousemove', function(e) {
     var rect = canvas.getBoundingClientRect();
     var x = e.clientX - rect.left;
     var yp = e.clientY - rect.top;
     var col = Math.floor(x / cellW);
+    if (loupeAt !== -1 && !(yp >= aaY && yp < aaY + aaBlockH)) hideLoupe();
     if (col < 0 || col >= nCols) { tooltip.style.display = 'none'; return; }
     var rl = regionLabel(col);
     if (yp < refH) {
@@ -601,24 +701,10 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
       // the residue index a different way than it was placed is what made the
       // tooltip name a third, differently wrong residue.
       var aaIdx = Math.floor((x - insStart * cellW) / aaCodonW);
-      if (aaIdx >= 0 && aaIdx < refAA.length) {
-        var band = Math.min(aaRows - 1,
-                            Math.floor((yp - aaY) / (aaH + 2)));
-        var names = ['Ref', 'Cons', 'Parent'];
-        var seqs = [refAA, consAA, parentAA];
-        var aa = seqs[band] ? seqs[band][aaIdx] : undefined;
-        // Say the residue, then what the other rows read at the same codon, so
-        // hovering any one row answers the comparison rather than half of it.
-        var others = [];
-        for (var bi = 0; bi < aaRows; bi++) {
-          if (bi === band || !seqs[bi]) continue;
-          others.push(names[bi] + ' ' + seqs[bi][aaIdx]);
-        }
-        tooltip.textContent = names[band] + ' AA ' + (aaIdx + 1) + ': ' + aa +
-          (others.length ? '  (' + others.join(', ') + ')' : '');
-      } else {
-        tooltip.style.display = 'none'; return;
-      }
+      tooltip.style.display = 'none';
+      if (aaIdx >= 0 && aaIdx < refAA.length) showLoupe(aaIdx, e);
+      else hideLoupe();
+      return;
     } else if (yp >= readsY && yp < readsY + nRows * cellH) {
       var row_idx = Math.floor((yp - readsY) / cellH);
       if (row_idx >= 0 && row_idx < nRows) {
@@ -637,6 +723,7 @@ function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scr
   });
   canvas.addEventListener('mouseleave', function() {
     tooltip.style.display = 'none';
+    hideLoupe();
   });
 
   // --- Mismatch track readout ---

@@ -717,10 +717,15 @@ def test_a_missing_change_is_drawn_with_a_dashed_edge():
     assert "ctx.setLineDash(ink[2] ? [3, 2] : []);" in html
 
 
-def test_hovering_one_amino_acid_row_reports_the_others():
+def test_hovering_the_amino_acid_rows_opens_the_loupe_over_all_of_them():
+    """A 6px codon holds no letter, so hovering magnifies every AA row at once."""
     html = render(_parent_view())
     assert "var names = ['Ref', 'Cons', 'Parent'];" in html
-    assert "others.join(', ')" in html
+    assert "for (var r = 0; r < aaRows; r++)" in html
+    assert "showLoupe(aaIdx, e)" in html
+    # The parent row is marked against the consensus, as it is drawn.
+    assert "r === 2 ? aa !== consAA[i]" in html
+    assert ".pileup-loupe-aa.diff" in html
 
 
 # --- The pinned scale's gutter ---------------------------------------------
