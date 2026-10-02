@@ -34,6 +34,7 @@ plot = ["matplotlib>=3.5"]
 seqview = "seqviewer.cli:seqview_main"
 seqviewer-pileup = "seqviewer.cli:main"
 seqviewer-lengths = "seqviewer.cli:lengths_main"
+seqviewer-qualities = "seqviewer.cli:qualities_main"
 
 [build-system]
 requires = ["hatchling"]

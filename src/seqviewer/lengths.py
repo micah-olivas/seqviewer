@@ -149,6 +149,33 @@ class Binning:
         return bool(self.below or self.above)
 
 
+class Axis:
+    """How a histogram names its unit, its bins and its clipped tails.
+
+    The tally underneath is a count per integer value, and nothing about drawing
+    it is particular to lengths except the words.  This is the length axis; a
+    tool tallying something else subclasses it and replaces the words, and the
+    bars, the alignment and the colour are shared.
+    """
+
+    unit = "bp"
+
+    def bin_label(self, b: "Bin") -> str:
+        return f"{b.low:,}–{b.high - 1:,}"
+
+    def below(self, binning: "Binning") -> Tuple[str, str]:
+        """The label and the note for the row of values under the axis."""
+        return f"<{binning.low:,}", f"shorter, down to {binning.shortest:,}"
+
+    def above(self, binning: "Binning") -> Tuple[str, str]:
+        """The label and the note for the row of values over the axis."""
+        return f">{binning.high:,}", f"longer, up to {binning.longest:,}"
+
+
+#: The axis :func:`histogram` draws when it is not given one.
+LENGTH_AXIS = Axis()
+
+
 @dataclass(frozen=True)
 class Summary:
     """Read count, total bases, and length statistics over every read."""
@@ -339,7 +366,16 @@ def _open_pair(path):
 
 
 def _length_blocks(stream) -> Iterator[List[int]]:
-    """Yield the record lengths in *stream*, one list per block read.
+    """Yield the record lengths in *stream*, one list per block read."""
+    for block in record_lines(stream, 1):
+        yield list(map(len, block))
+
+
+def record_lines(stream, field: int) -> Iterator[List[bytes]]:
+    """Yield line *field* of every record in *stream*, one list per block read.
+
+    *field* counts from 0 within the four lines of a record: 1 is the sequence,
+    3 the qualities.
 
     Each block is split on line boundaries in one call and every fourth line
     taken, so the work per record is done in C rather than in a Python loop.  A
@@ -368,7 +404,7 @@ def _length_blocks(stream) -> Iterator[List[int]]:
         whole = len(lines) - len(lines) % 4
         leftover = lines[whole:]        # complete lines of an unfinished record
         buf = sep.join(leftover) + sep + partial if leftover else partial
-        yield list(map(len, lines[1:whole:4])) if whole else []
+        yield lines[field:whole:4] if whole else []
 
     if buf:
         lines = buf.split(sep)
@@ -376,7 +412,7 @@ def _length_blocks(stream) -> Iterator[List[int]]:
             lines.pop()                 # a trailing separator, not a line
         whole = len(lines) - len(lines) % 4
         if whole:
-            yield list(map(len, lines[1:whole:4]))
+            yield lines[field:whole:4]
 
 
 def _tally_python(
@@ -525,7 +561,26 @@ def count_lengths(
     elif fast and not HAVE_NUMPY:
         raise RuntimeError("the array scanner needs numpy installed")
     scan = _tally_numpy if fast else _tally_python
+    return scan_files(paths, scan, progress, stop)
 
+
+def scan_files(
+    paths: Iterable,
+    scan: Callable,
+    progress: Optional[Callable[[int, int, int, Callable], None]] = None,
+    stop: Optional[Callable[[], bool]] = None,
+) -> LengthCounts:
+    """Run *scan* over each of *paths* in turn and merge what it tallies.
+
+    The part of a pass that does not depend on what is being tallied: opening
+    each file, gzipped or not, reporting progress against the bytes of the whole
+    run, building a snapshot on request, and stopping between blocks or files.
+    *scan* takes ``(stream, on_block, stop)`` and returns ``(tally, reads)``, a
+    tally being anything :meth:`LengthCounts.merge` accepts.
+
+    :func:`count_lengths` is this with a length scanner; a tool tallying some
+    other per-read integer passes its own.
+    """
     paths = list(paths)
     sizes = []
     for path in paths:
@@ -588,6 +643,7 @@ def bin_counts(
     counts: LengthCounts,
     count: int = DEFAULT_BINS,
     bulk: float = DEFAULT_BULK,
+    step: int = 1,
 ) -> Binning:
     """Bin a tally over the central *bulk* percent of reads.
 
@@ -599,7 +655,13 @@ def bin_counts(
     the 99.5th percentile.  Reads outside it are counted in ``Binning.below`` and
     ``Binning.above`` and are not binned.  ``bulk=100`` spans the full range.
 
-    Lengths that are all equal give a single bin.  Where clipping would leave no
+    *step* is the unit edges are snapped to.  The axis starts on a multiple of
+    it and every bin is a whole number of steps wide, which is what lets a tally
+    kept finer than its labels -- quality in tenths of Q, binned by whole Q --
+    put its edges where the labels say.  At 1, edges fall wherever the width
+    puts them.
+
+    Values that are all equal give a single bin.  Where clipping would leave no
     reads inside the axis, the full range is used instead.
     """
     if counts.empty:
@@ -613,11 +675,14 @@ def bin_counts(
         low, high = counts.shortest, counts.longest
         below, inside, above = 0, counts.total, 0
 
-    if low == high:
-        bins = [Bin(low, low + 1, inside)]
+    step = max(1, step)
+    low -= low % step
+    if high - low + 1 <= step:
+        bins = [Bin(low, low + step, inside)]
     else:
         count = max(1, count)
         width = max(1, math.ceil((high - low + 1) / count))
+        width = math.ceil(width / step) * step
         edges = list(range(low, high + 1, width))
         tallies = [0] * len(edges)
         last = len(edges) - 1
@@ -674,11 +739,12 @@ def histogram(
     width: int = 80,
     log: bool = False,
     palette: Optional[Palette] = None,
+    axis: Axis = LENGTH_AXIS,
 ) -> List[str]:
     """Render *binning* as lines of text, none wider than *width*.
 
     Clipped tails are drawn as rows above and below the axis, labelled with
-    their read count and the extreme length they reach.  Tail counts do not
+    their read count and the extreme value they reach.  Tail counts do not
     scale the bars; the tallest binned count does.
 
     *log* scales bar length by ``log(1 + count)``, which keeps the smaller bins
@@ -687,23 +753,26 @@ def histogram(
 
     *palette* colours the output.  Its codes are added after the columns are laid
     out, so they neither shift the alignment nor count toward *width*.
+
+    *axis* names the unit, the bins and the tails; the default is lengths.
     """
     if not binning.bins:
         return ["no reads"]
 
     pal = palette or Palette()
+    unit = axis.unit
     rows: List[Tuple[str, int, str, bool]] = []
     if binning.below:
-        rows.append((f"<{binning.low:,}", binning.below,
-                     f"shorter, down to {binning.shortest:,}", True))
+        label, note = axis.below(binning)
+        rows.append((label, binning.below, note, True))
     for b in binning.bins:
-        rows.append((f"{b.low:,}–{b.high - 1:,}", b.count, "", False))
+        rows.append((axis.bin_label(b), b.count, "", False))
     if binning.above:
-        rows.append((f">{binning.high:,}", binning.above,
-                     f"longer, up to {binning.longest:,}", True))
+        label, note = axis.above(binning)
+        rows.append((label, binning.above, note, True))
 
     counts = [f"{r[1]:,}" for r in rows]
-    label_w = max(len(r[0]) for r in rows + [("bp", 0, "", False)])
+    label_w = max(len(r[0]) for r in rows + [(unit, 0, "", False)])
     count_w = max(len(x) for x in counts + ["reads"])
     note_w = max(len(r[2]) for r in rows)
     bar_w = max(8, width - label_w - count_w - note_w - (6 if note_w else 4))
@@ -714,7 +783,7 @@ def histogram(
     ceiling = max((height(b.count) for b in binning.bins), default=1.0) or 1.0
     peak = max(b.count for b in binning.bins)
 
-    head = f"{'bp':>{label_w}}  {'':{bar_w}}  {'reads':>{count_w}}"
+    head = f"{unit:>{label_w}}  {'':{bar_w}}  {'reads':>{count_w}}"
     lines = [f"{pal.head}{head}{pal.reset}" if pal.head else head]
 
     for (label, count, note, tail), shown in zip(rows, counts):

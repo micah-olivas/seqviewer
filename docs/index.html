@@ -175,8 +175,9 @@ ul.plain li { margin-bottom: 0.22rem; }
       <pre class="out">usage: seqview &lt;command&gt; [options]
 
 commands:
-  pileup   align reads to a reference and write a pileup page
-  lengths  plot the read-length distribution in the terminal
+  pileup     align reads to a reference and write a pileup page
+  lengths    plot the read-length distribution in the terminal
+  qualities  plot the per-read quality distribution in the terminal
 
 seqview &lt;command&gt; --help lists that command's options.</pre>
     </div>
@@ -262,6 +263,89 @@ for the full range.</pre>
       <dd>bins across the figure's axis (default 240). Separate from --bins, which sets the terminal's, since a figure has room for more</dd>
       <dt><code>--no-open</code></dt>
       <dd>write the figure without opening it</dd>
+      <dt><code>--slow</code></dt>
+      <dd>scan without numpy, which is slower on a large file and reports the same figures</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section class="tool">
+  <div class="label">
+    <span class="name">qualities</span>
+    <span class="what">per-read quality distribution</span>
+  </div>
+  <div class="body">
+    <p>Needs no reference either. Each read is reduced to its mean quality and
+    the run is tallied by it in one pass, the way <code>lengths</code> tallies
+    it by length.</p>
+
+    <p>A read's mean is taken over its per-base error rates and expressed as a
+    Phred score, rather than taken over the scores. A score is a logarithm, so
+    the mean of the scores is the larger figure, by more the more a read's
+    scores vary. One base at Q3 among ninety-nine at Q40 is a read wrong about
+    once in two hundred bases, which is Q23; the mean of its scores is
+    Q40.</p>
+
+    <div class="run">
+      <pre class="cmd">$ <b>seqview qualities</b> CRNGS7_1_sample_1.fastq --bins 16</pre>
+      <pre class="out">CRNGS7_1_sample_1.fastq  ·  1 file
+
+    Q                                                              reads
+12–13  █████████████                                                 140
+14–15  ███████████████████████████████▍                              338
+16–17  █████████████████████████████████████████▏                    443
+18–19  ███████████████████████████████████████████████▊              515
+20–21  ██████████████████████████████████████████████████████████    625
+22–23  █████████████████████████████████████████████████████▍        575
+24–25  ██████████████████████████████████████████████████▉           548
+26–27  ████████████████████████████████████████▏                     432
+28–29  ██████████████████████████████████▏                           368
+30–31  █████████████████████████████████▏                            357
+32–33  █████████████████████████████████                             355
+34–35  ███████████████████████████████▌                              339
+36–37  █████████████████████████                                     270
+38–39  ████████▎                                                      89
+40–41  ██▌                                                            27
+42–43  ▏                                                               1
+
+5,422 reads
+min Q12.8 · median Q24.2 · max Q43.7
+≥Q10 5,422 (100.0%) · ≥Q20 3,986 (73.5%) · ≥Q30 1,438 (26.5%)</pre>
+    </div>
+
+    <div class="reading">
+      <p>Three quarters of this run's reads have an error rate of 1% or less,
+      which is Q20, and a quarter 0.1% or less, which is Q30. The poorest read
+      is Q12.8, so none is wrong more often than once in ten bases.</p>
+    </div>
+
+    <p>Bars are whole Q and the figures are exact to a tenth. Scores are read
+    as Phred+33. A record with an empty quality line has nothing to average,
+    so it is counted apart and named under the figures rather than
+    binned.</p>
+
+    <div class="ref">
+      <h3>seqview qualities [options] reads</h3>
+      <dl class="flags">
+      <dt><code>reads</code></dt>
+      <dd>a directory of FASTQs, or a single FASTQ</dd>
+      <dt><code>--bins</code> <span class="arg">N</span></dt>
+      <dd>bins across the axis (default 32). Bars are whole Q, so fewer bins than the run spans merges neighbouring scores into one bar</dd>
+      <dt><code>--thresholds</code> <span class="arg">Q,...</span></dt>
+      <dd>scores to report the share of reads at or above (default 10,20,30, one error in ten bases, a hundred, a thousand)</dd>
+      <dt><code>--log</code></dt>
+      <dd>scale bar length by log(1 + count), which keeps the smaller bins of a peaked distribution distinguishable</dd>
+      <dt><code>--width</code> <span class="arg">COLS</span></dt>
+      <dd>output width (default: the terminal's, or 80)</dd>
+      <dt><code>--per-file</code></dt>
+      <dd>one histogram per FASTQ instead of one for the whole directory</dd>
+      <dt><code>--no-color</code></dt>
+      <dd>write plain text. Colour is already left out when stdout is not a terminal, or when NO_COLOR is set</dd>
+      <dt><code>--no-progress</code></dt>
+      <dd>do not report progress while scanning</dd>
+      <dt><code>--no-live</code></dt>
+      <dd>draw the histogram once the scan finishes rather than filling it in as reads are scored</dd>
       <dt><code>--slow</code></dt>
       <dd>scan without numpy, which is slower on a large file and reports the same figures</dd>
       </dl>
@@ -376,7 +460,7 @@ Wrote docs_demo.html · docs_demo.summary.html · docs_demo.log.txt</pre>
   </div>
 </section>
 
-<p class="stamp">seqviewer 0.1.0. Built from the package by docs/build.py on 2026-09-11.</p>
+<p class="stamp">seqviewer 0.1.0. Built from the package by docs/build.py on 2026-10-02.</p>
 
 </main>
 </body>

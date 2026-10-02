@@ -30,7 +30,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "src"))
 
 from seqviewer import __version__                              # noqa: E402
-from seqviewer.cli import build_lengths_parser, build_parser   # noqa: E402
+from seqviewer.cli import (build_lengths_parser, build_parser,  # noqa: E402
+                           build_qualities_parser)
 
 OUT = HERE / "index.html"
 EXAMPLES = HERE / "examples"
@@ -302,6 +303,46 @@ ul.plain li { margin-bottom: 0.22rem; }
 
 <section class="tool">
   <div class="label">
+    <span class="name">qualities</span>
+    <span class="what">per-read quality distribution</span>
+  </div>
+  <div class="body">
+    <p>Needs no reference either. Each read is reduced to its mean quality and
+    the run is tallied by it in one pass, the way <code>lengths</code> tallies
+    it by length.</p>
+
+    <p>A read's mean is taken over its per-base error rates and expressed as a
+    Phred score, rather than taken over the scores. A score is a logarithm, so
+    the mean of the scores is the larger figure, by more the more a read's
+    scores vary. One base at Q3 among ninety-nine at Q40 is a read wrong about
+    once in two hundred bases, which is Q23; the mean of its scores is
+    Q40.</p>
+
+    <div class="run">
+      <pre class="cmd">$ <b>seqview qualities</b> CRNGS7_1_sample_1.fastq --bins 16</pre>
+      <pre class="out">__QUALITIES__</pre>
+    </div>
+
+    <div class="reading">
+      <p>Three quarters of this run's reads have an error rate of 1% or less,
+      which is Q20, and a quarter 0.1% or less, which is Q30. The poorest read
+      is Q12.8, so none is wrong more often than once in ten bases.</p>
+    </div>
+
+    <p>Bars are whole Q and the figures are exact to a tenth. Scores are read
+    as Phred+33. A record with an empty quality line has nothing to average,
+    so it is counted apart and named under the figures rather than
+    binned.</p>
+
+    <div class="ref">
+      <h3>seqview qualities [options] reads</h3>
+      __QUALITIES_FLAGS__
+    </div>
+  </div>
+</section>
+
+<section class="tool">
+  <div class="label">
     <span class="name">pileup</span>
     <span class="what">reads against a reference</span>
   </div>
@@ -374,9 +415,12 @@ def build(today=None) -> str:
     return (TEMPLATE
             .replace("__SEQVIEW__", example("seqview"))
             .replace("__LENGTHS__", example("lengths"))
+            .replace("__QUALITIES__", example("qualities"))
             .replace("__PILEUP__", example("pileup"))
             .replace("__LENGTHS_FLAGS__", flags(build_lengths_parser(
                 "seqview lengths")))
+            .replace("__QUALITIES_FLAGS__", flags(build_qualities_parser(
+                "seqview qualities")))
             .replace("__PILEUP_FLAGS__", flags(build_parser("seqview pileup")))
             .replace("__STAMP__", escape(stamp)))
 

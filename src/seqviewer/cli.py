@@ -50,7 +50,7 @@ except ImportError:                     # pragma: no cover - no termios here
     termios = None
 from pathlib import Path
 
-from . import lengths
+from . import lengths, qualities
 from .align import Read, grid_from_reads
 from .cluster import cluster_rows
 from .genbank import load_reference
@@ -856,12 +856,16 @@ class LiveView:
     """
 
     def __init__(self, width, bins, bulk, log, palette=None, rows=24,
-                 enabled=True, stream=None):
+                 enabled=True, stream=None, render=None):
         self.width = width
         self.bins = bins
         self.bulk = bulk
         self.log = log
         self.palette = palette
+        # What turns a tally into the bars and the figures under them.  The
+        # redrawing, the progress line and the stop key are the same whatever
+        # is tallied, so a tool passes its own and inherits the rest.
+        self.render = render or self._render_lengths
         self.stream = stream if stream is not None else sys.stdout
         self.enabled = (enabled and self.stream.isatty()
                         and rows > bins + LIVE_EXTRA_ROWS)
@@ -907,18 +911,23 @@ class LiveView:
         if counts.empty:
             lines = ["", "no reads"]
         else:
-            binning = lengths.bin_counts(counts, self.bins, self.bulk)
-            lines = [""]
-            lines += lengths.histogram(binning, self.width, self.log,
-                                       self.palette)
-            if stats:
-                summary = lengths.summarise_counts(counts)
+            hist, texts = self.render(counts, stats)
+            lines = [""] + hist
+            if texts:
                 lines.append("")
-                for text in lengths.summary_lines(summary, binning):
+                for text in texts:
                     lines += textwrap.fill(text, self.width).split("\n")
         # None means there is no such line; "" is a blank one, and kept.
         lines += [line for line in tail if line is not None]
         return lines
+
+    def _render_lengths(self, counts, stats):
+        """The length histogram, and with *stats* its figures."""
+        binning = lengths.bin_counts(counts, self.bins, self.bulk)
+        hist = lengths.histogram(binning, self.width, self.log, self.palette)
+        texts = (lengths.summary_lines(lengths.summarise_counts(counts),
+                                       binning) if stats else [])
+        return hist, texts
 
     def draw(self, lines, final=False):
         """Write *lines* over the frame already on screen.
@@ -1037,6 +1046,29 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
     """Print a read-length histogram for a directory of FASTQs, or one file."""
     args = build_lengths_parser(prog).parse_args(argv)
 
+    def make_view(width, palette, rows):
+        return LiveView(width, args.bins, args.bulk, args.log,
+                        palette=palette, rows=rows, enabled=not args.no_live)
+
+    def after(counts, label, dim):
+        if args.png is not None and not counts.empty:
+            return write_png(counts, args, label, dim)
+        return 0
+
+    return histogram_runs(args, lengths.count_lengths, make_view, after)
+
+
+def histogram_runs(args, count, make_view, after=None):
+    """Scan each group of a run and draw it: the loop every histogram shares.
+
+    *count* takes ``(paths, progress=, stop=, fast=)`` and returns a tally;
+    *make_view* takes ``(width, palette, rows)`` and returns the
+    :class:`LiveView` to draw it in.  *after*, given ``(tally, label, dim)``,
+    runs once a group is drawn and returns an exit status, 0 to carry on.
+
+    *args* needs ``reads``, ``width``, ``per_file``, ``no_color``,
+    ``no_progress`` and ``slow``.
+    """
     paths = fastq_paths(args.reads)
     if not paths:
         print(f"no FASTQ files at {args.reads}", file=sys.stderr)
@@ -1061,8 +1093,7 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
         files = f"{len(group)} file{'s' if len(group) != 1 else ''}"
         print(f"{label}  {dim('·')}  {dim(files)}")
 
-        view = LiveView(width, args.bins, args.bulk, args.log, palette=palette,
-                        rows=window.lines, enabled=not args.no_live)
+        view = make_view(width, palette, window.lines)
         # A live view already reports its own progress, so the line on stderr
         # is only for a scan that is not being drawn.
         bar = ScanProgress(width, palette=palette,
@@ -1076,7 +1107,7 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
             if keys.armed:
                 view.hint = dim("press any key to stop")
             try:
-                counts = lengths.count_lengths(
+                counts = count(
                     group, progress=report, stop=keys.pressed,
                     fast=False if args.slow else None)
             except KeyboardInterrupt:
@@ -1091,11 +1122,91 @@ def lengths_main(argv=None, prog="seqviewer-lengths"):
         view.bytes = view.bytes or bar.bytes
         view.finish(counts)
 
-        if args.png is not None and not counts.empty:
-            status = write_png(counts, args, label, dim)
+        if after is not None:
+            status = after(counts, label, dim)
             if status:
                 return status
     return 0
+
+
+def _thresholds(text):
+    """Read ``--thresholds 10,20,30`` into ascending whole scores."""
+    try:
+        values = sorted({int(part) for part in text.split(",") if part.strip()})
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a list of whole scores, such as 10,20,30")
+    if any(not 0 <= q <= qualities.MAX_Q for q in values):
+        raise argparse.ArgumentTypeError(
+            f"scores run from 0 to {qualities.MAX_Q}")
+    return tuple(values)
+
+
+def build_qualities_parser(prog="seqviewer-qualities"):
+    """The qualities parser, apart from the command, so the docs can read it."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Plot the distribution of per-read mean quality as a "
+                    "histogram in the terminal. A read's mean is of its "
+                    "per-base error rates, expressed as a Phred score, which "
+                    "is lower than the mean of the scores themselves. Takes a "
+                    "directory of FASTQs or a single file; .gz is read "
+                    "directly. Scores are read as Phred+33.")
+    parser.add_argument("reads",
+                        help="a directory of FASTQs, or a single FASTQ")
+    parser.add_argument("--bins", type=int, default=qualities.DEFAULT_BINS,
+                        metavar="N",
+                        help="bins across the axis (default "
+                             f"{qualities.DEFAULT_BINS}). Bars are whole Q, "
+                             "so fewer bins than the run spans merges "
+                             "neighbouring scores into one bar")
+    parser.add_argument("--thresholds", type=_thresholds,
+                        default=qualities.DEFAULT_THRESHOLDS, metavar="Q,...",
+                        help="scores to report the share of reads at or above "
+                             "(default "
+                             f"{','.join(map(str, qualities.DEFAULT_THRESHOLDS))}"
+                             ", one error in ten bases, a hundred, a thousand)")
+    parser.add_argument("--log", action="store_true",
+                        help="scale bar length by log(1 + count), which keeps "
+                             "the smaller bins of a peaked distribution "
+                             "distinguishable")
+    parser.add_argument("--width", type=int, metavar="COLS",
+                        help="output width (default: the terminal's, or 80)")
+    parser.add_argument("--per-file", action="store_true",
+                        help="one histogram per FASTQ instead of one for the "
+                             "whole directory")
+    parser.add_argument("--no-color", action="store_true",
+                        help="write plain text. Colour is already left out "
+                             "when stdout is not a terminal, or when NO_COLOR "
+                             "is set")
+    parser.add_argument("--no-progress", action="store_true",
+                        help="do not report progress while scanning")
+    parser.add_argument("--no-live", action="store_true",
+                        help="draw the histogram once the scan finishes rather "
+                             "than filling it in as reads are scored")
+    parser.add_argument("--slow", action="store_true",
+                        help="scan without numpy, which is slower on a large "
+                             "file and reports the same figures")
+    return parser
+
+
+def qualities_main(argv=None, prog="seqviewer-qualities"):
+    """Print a per-read quality histogram for a directory of FASTQs."""
+    args = build_qualities_parser(prog).parse_args(argv)
+
+    def make_view(width, palette, rows):
+        def draw(counts, stats):
+            # Live frames arrive as the pass's own snapshot, a bare tally; the
+            # settled frame is the full result, which also knows what went
+            # unscored.
+            tally = (counts if isinstance(counts, qualities.QualityTally)
+                     else qualities.QualityTally(counts))
+            return qualities.render(tally, args.bins, width, args.log,
+                                    palette, args.thresholds, stats)
+        return LiveView(width, args.bins, 100.0, args.log, palette=palette,
+                        rows=rows, enabled=not args.no_live, render=draw)
+
+    return histogram_runs(args, qualities.count_qualities, make_view)
 
 
 def write_png(counts, args, label, dim):
@@ -1133,13 +1244,16 @@ def write_png(counts, args, label, dim):
 def seqview_main(argv=None):
     """Dispatch ``seqview <command>`` to that command's own parser.
 
-    Each command is installed under its own name as well -- ``seqviewer-pileup``
-    and ``seqviewer-lengths`` -- and takes the same arguments either way.
+    Each command is installed under its own name as well -- ``seqviewer-pileup``,
+    ``seqviewer-lengths`` and ``seqviewer-qualities`` -- and takes the same
+    arguments either way.
     """
     commands = {
         "pileup": (main, "align reads to a reference and write a pileup page"),
         "lengths": (lengths_main,
                     "plot the read-length distribution in the terminal"),
+        "qualities": (qualities_main,
+                      "plot the per-read quality distribution in the terminal"),
     }
     argv = list(sys.argv[1:] if argv is None else argv)
 

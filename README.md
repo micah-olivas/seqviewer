@@ -187,10 +187,10 @@ which about halves the time to scan a large file.
 seqview lengths reads/
 ```
 
-`seqview` dispatches to the two commands, `pileup` and `lengths`, and each is
-installed under its own name as well, `seqviewer-pileup` and
-`seqviewer-lengths`, taking the same arguments either way. `seqview` on its own
-lists them.
+`seqview` dispatches to its commands, `pileup`, `lengths` and `qualities`, and
+each is installed under its own name as well, `seqviewer-pileup`,
+`seqviewer-lengths` and `seqviewer-qualities`, taking the same arguments either
+way. `seqview` on its own lists them.
 
 The axis covers the central 99% of reads rather than the full range, because a
 few concatemers otherwise reach the top of it on their own. For a product
@@ -309,6 +309,33 @@ helped on an M3 Pro. ISA-L through `python-isal` inflated at about a tenth of
 zlib's rate, and piping from `gzip -dc` to overlap inflating with counting lost
 to the cost of the pipe. Expect a gzipped run to scan at a fraction of the rate
 of the same reads uncompressed.
+
+## Read qualities
+
+`seqview qualities` reduces each read to its mean quality and draws the run's
+distribution, one bar per whole Q, with the share of reads at or above Q10, Q20
+and Q30 under it. Like `lengths` it needs no reference, streams the file, reads
+gzip directly, redraws while it scans, and stops on a key.
+
+```bash
+seqview qualities reads/
+seqview qualities run.fastq.gz --thresholds 15,20,25
+```
+
+A read's mean is of its per-base error rates, expressed as a Phred score:
+`-10 log10(mean(10 ** (-Q / 10)))`. Averaging the scores directly gives a higher
+figure, because a score is a logarithm; `docs/index.html` works an example.
+Scores are read as Phred+33. A record with an empty quality line is counted
+apart and named under the figures.
+
+The figures are exact to a tenth of Q. A read's key is floored rather than
+rounded, so bar 19 holds Q19.0 up to Q20.0 and a read counted at Q20 or above
+is one; `tests/test_qualities.py` pins both.
+
+Scoring reads every base, where the length scan reads only where lines end, so
+it is the slower of the two. On a 194 MiB FASTQ with the page cache warm, the
+array scanner was about five times faster than the pure-Python one and about
+five times slower than the length scanner, best of five runs.
 
 ## Reference and Feature
 
