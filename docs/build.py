@@ -233,8 +233,7 @@ p { margin: 0 0 0.95rem; max-width: 38rem; }
 .run { position: relative; }
 .copy { position: absolute; top: 0.5rem; right: 0.5rem; z-index: 1;
         font: 0.72rem/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
-        color: var(--muted); background: var(--paper);
-        border: 1px solid var(--edge); border-radius: 6px;
+        color: var(--muted); background: none; border: 0; border-radius: 4px;
         width: 1.9rem; height: 1.9rem; padding: 0; cursor: pointer;
         display: grid; place-items: center; }
 .copy svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor;
@@ -243,8 +242,9 @@ p { margin: 0 0 0.95rem; max-width: 38rem; }
 .run .cmd:hover ~ .copy, .copy:hover, .copy:focus-visible,
 .copy[data-state="done"] { opacity: 1; }
 @media (hover: none) { .copy { opacity: 1; } }
-.copy:hover, .copy:focus-visible { color: var(--ink); border-color: var(--quiet); }
-.copy[data-state="done"] { color: var(--accent); border-color: var(--accent); }
+.copy:hover, .copy:focus-visible { color: var(--ink); }
+.copy:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.copy[data-state="done"] { color: var(--accent); }
 .run .cmd { padding-right: 3.2rem; }
 .run .cmd b { font-weight: 600; color: var(--accent); }
 .run .out { background: var(--term-bg); color: var(--term-ink);
