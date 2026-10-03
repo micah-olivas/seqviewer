@@ -510,7 +510,35 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     button.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
     document.querySelectorAll("figure iframe").forEach(tell);
   }
+  /* Colours cross-fade for a moment while the theme changes.  The rule exists
+     only for that moment, so nothing else on the page is slowed by it. */
+  var FADE = "html.theme-fade, html.theme-fade *, html.theme-fade *::before, " +
+    "html.theme-fade *::after { transition: background-color .3s ease, " +
+    "color .3s ease, border-color .3s ease, fill .3s ease, stroke .3s ease " +
+    "!important; }";
+  function fade(doc) {
+    try {
+      if (!doc || !doc.documentElement) return;
+      if (window.matchMedia &&
+          matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (!doc.getElementById("theme-fade-style")) {
+        var style = doc.createElement("style");
+        style.id = "theme-fade-style"; style.textContent = FADE;
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      var html = doc.documentElement;
+      html.classList.add("theme-fade");
+      clearTimeout(html.fadeTimer);
+      html.fadeTimer = setTimeout(function () {
+        html.classList.remove("theme-fade");
+      }, 450);
+    } catch (e) {}
+  }
   button.addEventListener("click", function () {
+    fade(document);
+    document.querySelectorAll("figure iframe").forEach(function (frame) {
+      fade(frame.contentDocument);
+    });
     var next = current() === "dark" ? "light" : "dark";
     root.setAttribute("data-theme", next);
     try { localStorage.setItem("seqviewer-theme", next); } catch (e) {}
