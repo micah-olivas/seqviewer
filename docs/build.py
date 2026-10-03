@@ -38,6 +38,12 @@ from seqviewer.cli import (                                     # noqa: E402
 OUT = HERE / "index.html"
 EXAMPLES = HERE / "examples"
 
+#: Who the page credits, read from the package metadata so it cannot drift from
+#: it, and where the name links to.
+AUTHOR = re.search(r'authors\s*=\s*\[\{\s*name\s*=\s*"([^"]+)"',
+                   (HERE.parent / "pyproject.toml").read_text()).group(1)
+AUTHOR_URL = "https://github.com/micah-olivas"
+
 #: The stamp line, matched so --check can ignore the date in it.
 STAMP = re.compile(r'<p class="stamp">[^<]*</p>')
 
@@ -291,7 +297,8 @@ a { color: var(--accent); text-decoration: underline;
     text-underline-offset: 0.15em; text-decoration-thickness: 0.06em; }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-.stamp { margin: 1.6rem 0 0; font-size: 0.8rem; color: var(--quiet); }
+.credit { margin: 1.6rem 0 0; font-size: 0.9rem; color: var(--muted); }
+.stamp { margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--quiet); }
 
 @media (max-width: 720px) {
   .mast, .tool { grid-template-columns: 1fr; gap: 0.5rem; }
@@ -479,6 +486,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   </div>
 </section>
 
+<p class="credit">Built by <a href="__AUTHOR_URL__">__AUTHOR__</a></p>
 <p class="stamp">__STAMP__</p>
 
 </main>
@@ -638,6 +646,8 @@ def build(today=None) -> str:
             .replace("__QUALITY_FLAGS__", flags(build_quality_parser(
                 "seqview qualities")))
             .replace("__PILEUP_FLAGS__", flags(build_parser("seqview pileup")))
+            .replace("__AUTHOR_URL__", AUTHOR_URL)
+            .replace("__AUTHOR__", escape(AUTHOR))
             .replace("__STAMP__", escape(stamp)))
 
 
