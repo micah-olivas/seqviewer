@@ -39,7 +39,8 @@ def test_every_flag_of_every_command_is_documented(docs):
     """No argument the CLI accepts is missing from the page."""
     page = docs.build()
     parsers = [docs.build_parser("seqview pileup"),
-               docs.build_lengths_parser("seqview lengths")]
+               docs.build_lengths_parser("seqview lengths"),
+               docs.build_quality_parser("seqview qualities")]
     for parser in parsers:
         for term, _, _ in docs.arguments(parser):
             assert f"<code>{docs.escape(term)}</code>" in page, term
@@ -48,7 +49,8 @@ def test_every_flag_of_every_command_is_documented(docs):
 def test_every_flag_carries_help_text(docs):
     """An undocumented flag renders as a blank row, so require the text."""
     parsers = [docs.build_parser("seqview pileup"),
-               docs.build_lengths_parser("seqview lengths")]
+               docs.build_lengths_parser("seqview lengths"),
+               docs.build_quality_parser("seqview qualities")]
     missing = [term for parser in parsers
                for term, _, text in docs.arguments(parser) if not text.strip()]
     assert not missing, f"no help text for: {', '.join(missing)}"
@@ -57,7 +59,7 @@ def test_every_flag_carries_help_text(docs):
 def test_captured_output_is_shown_verbatim(docs):
     """The transcripts reach the page unedited, so they say what the tool says."""
     page = docs.build()
-    for name in ("seqview", "lengths", "pileup"):
+    for name in ("seqview", "lengths", "quality", "quality_by_read", "pileup"):
         for line in docs.example(name).splitlines():
             assert line in page, line
 

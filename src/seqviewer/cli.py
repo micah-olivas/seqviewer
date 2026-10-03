@@ -50,7 +50,7 @@ except ImportError:                     # pragma: no cover - no termios here
     termios = None
 from pathlib import Path
 
-from . import lengths
+from . import lengths, quality
 from .align import Read, grid_from_reads
 from .cluster import cluster_rows
 from .genbank import load_reference
@@ -1130,16 +1130,122 @@ def write_png(counts, args, label, dim):
     return 0
 
 
+def build_quality_parser(prog="seqviewer-qualities"):
+    """The quality parser, apart from the command, so the docs can read it."""
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Plot the base-quality distribution of a sequencing run as "
+                    "a histogram in the terminal. Takes a directory of FASTQs "
+                    "or a single file; .gz is read directly.")
+    parser.add_argument("reads",
+                        help="a directory of FASTQs, or a single FASTQ")
+    parser.add_argument("--bins", type=int, default=quality.DEFAULT_BINS,
+                        metavar="N",
+                        help="bins across the axis (default "
+                             f"{quality.DEFAULT_BINS}). Each is a whole number "
+                             "of scores wide")
+    parser.add_argument("--by", choices=quality.BY, default="base",
+                        help="what each count is. base scores every base at "
+                             "its own value, so the poor end of an otherwise "
+                             "good read still shows. read scores each read at "
+                             "the mean of its bases, rounded to a whole score "
+                             "(default base)")
+    parser.add_argument("--mean", choices=quality.MEANS, default="error",
+                        help="how --by read takes a read's mean. error "
+                             "averages the error probabilities and reports the "
+                             "score of that, as NanoPlot does; a few bad bases "
+                             "pull it down a long way. phred averages the "
+                             "scores themselves, which reads higher on a noisy "
+                             "read (default error)")
+    parser.add_argument("--offset", type=int, default=quality.DEFAULT_OFFSET,
+                        metavar="N",
+                        help="ASCII value of score 0 (default "
+                             f"{quality.DEFAULT_OFFSET}). Older Illumina files "
+                             "use 64")
+    parser.add_argument("--log", action="store_true",
+                        help="scale bar length by log(1 + count), which keeps "
+                             "the smaller bins of a peaked distribution "
+                             "distinguishable")
+    parser.add_argument("--width", type=int, metavar="COLS",
+                        help="output width (default: the terminal's, or 80)")
+    parser.add_argument("--per-file", action="store_true",
+                        help="one histogram per FASTQ instead of one for the "
+                             "whole directory")
+    parser.add_argument("--no-color", action="store_true",
+                        help="write plain text. Colour is already left out "
+                             "when stdout is not a terminal, or when NO_COLOR "
+                             "is set")
+    parser.add_argument("--no-progress", action="store_true",
+                        help="do not report progress while scanning")
+    parser.add_argument("--slow", action="store_true",
+                        help="scan without numpy, which is slower on a large "
+                             "file and reports the same figures")
+    return parser
+
+
+def quality_main(argv=None, prog="seqviewer-qualities"):
+    """Print a base-quality histogram for a directory of FASTQs, or one file."""
+    args = build_quality_parser(prog).parse_args(argv)
+
+    paths = fastq_paths(args.reads)
+    if not paths:
+        print(f"no FASTQ files at {args.reads}", file=sys.stderr)
+        return 1
+
+    width = args.width or shutil.get_terminal_size((80, 24)).columns
+    palette = None
+    if not (args.no_color or os.environ.get("NO_COLOR")
+            or not sys.stdout.isatty()):
+        palette = quality.PALETTE
+
+    def dim(text):
+        return f"{palette.tail}{text}{palette.reset}" if palette else text
+
+    groups = ([(p.name, [p]) for p in paths] if args.per_file
+              else [(str(args.reads), paths)])
+
+    for index, (label, group) in enumerate(groups):
+        if index:
+            print()
+        files = f"{len(group)} file{'s' if len(group) != 1 else ''}"
+        print(f"{label}  {dim('·')}  {dim(files)}")
+        print()
+
+        bar = ScanProgress(width, palette=palette,
+                           enabled=not args.no_progress)
+        try:
+            counts = quality.count_qualities(
+                group, offset=args.offset, progress=bar.update,
+                fast=False if args.slow else None, by=args.by,
+                mean=args.mean)
+        except KeyboardInterrupt:
+            bar.clear()
+            print()
+            return 130
+        bar.clear()
+
+        for line in quality.histogram(quality.bin_counts(counts, args.bins),
+                                      width, args.log, palette):
+            print(line)
+        print()
+        for line in quality.summary_lines(quality.summarise(counts)):
+            print(line)
+    return 0
+
+
 def seqview_main(argv=None):
     """Dispatch ``seqview <command>`` to that command's own parser.
 
-    Each command is installed under its own name as well -- ``seqviewer-pileup``
-    and ``seqviewer-lengths`` -- and takes the same arguments either way.
+    Each command is installed under its own name as well --
+    ``seqviewer-pileup``, ``seqviewer-lengths`` and ``seqviewer-qualities`` -- and
+    takes the same arguments either way.
     """
     commands = {
         "pileup": (main, "align reads to a reference and write a pileup page"),
         "lengths": (lengths_main,
                     "plot the read-length distribution in the terminal"),
+        "qualities": (quality_main,
+                    "plot the base-quality distribution in the terminal"),
     }
     argv = list(sys.argv[1:] if argv is None else argv)
 

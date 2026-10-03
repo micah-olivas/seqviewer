@@ -21,6 +21,9 @@ annot = ["biopython>=1.80"]
 # Everything the seqviewer-pileup command needs: it aligns reads and reads an
 # annotated reference, so it is align plus annot under one name.
 cli = ["pysam>=0.20", "biopython>=1.80"]
+# Everything above, for a general install: aligning, annotation, the array
+# scanner and figures.  minimap2 and samtools are still needed on PATH.
+all = ["pysam>=0.20", "biopython>=1.80", "numpy>=1.20", "matplotlib>=3.5"]
 dev = ["pytest>=7", "biopython>=1.80", "numpy>=1.20", "matplotlib>=3.5"]
 # Scanning read lengths with array operations rather than a line at a
 # time. The figures reported are the same either way; the scan is faster.
@@ -34,6 +37,7 @@ plot = ["matplotlib>=3.5"]
 seqview = "seqviewer.cli:seqview_main"
 seqviewer-pileup = "seqviewer.cli:main"
 seqviewer-lengths = "seqviewer.cli:lengths_main"
+seqviewer-qualities = "seqviewer.cli:quality_main"
 
 [build-system]
 requires = ["hatchling"]

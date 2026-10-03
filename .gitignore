@@ -13,3 +13,6 @@ venv/
 # Written beside every page by seqviewer-pileup, and regenerated each run.
 *.ref.fasta
 *.log.txt
+
+# Built by docs/examples/make_sample_fastq.py.
+docs/examples/*.fastq
