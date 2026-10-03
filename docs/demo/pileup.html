@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><script>
+(function () {
+  try {
+    var up = window.parent.document.documentElement.getAttribute("data-theme");
+    var saved = localStorage.getItem("seqviewer-theme");
+    var choice = up || (saved === "dark" || saved === "light" ? saved : "");
+    var dark = choice ? choice === "dark" : window.matchMedia(
+      "(prefers-color-scheme: dark)").matches;
+    if (dark) document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+  } catch (e) {}
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pileup: pUC19 demo</title>
+<style id="cv-theme-bridge">
+:root {
+    --cv-match: #d4d8dc;
+    --cv-vector: #e9ebee;
+    --cv-gap: #ffffff;
+    --cv-a: #e03131;
+    --cv-t: #1971c2;
+    --cv-c: #e8590c;
+    --cv-g: #e67700;
+    --cv-boundary: #d97706;
+    --cv-region: rgba(56,132,255,0.10);
+    --cv-region-focus: rgba(217,119,6,0.09);
+    --cv-tick: #94a3b8;
+    --cv-tick-label: #1e293b;
+    --cv-flag: #94a3b8;
+    --cv-aa-match: #d1d5db;
+    --cv-aa-diff: #e03131;
+    --cv-aa-diff-bg: rgba(224,49,49,0.10);
+    --cv-aa-bg: #f8fafc;
+    --cv-aa-grid: #e5e7eb;
+    --cv-tab-ok: #0f7a52;
+    --cv-tab-ok-bg: #e8f6ef;
+    --cv-tab-warn: #a1650a;
+    --cv-tab-warn-bg: #fdf3e2;
+}
+[data-theme="dark"] {
+    --cv-match: #4a5568;
+    --cv-vector: #3a4455;
+    --cv-gap: #ffffff;
+    --cv-a: #ff6b6b;
+    --cv-t: #339af0;
+    --cv-c: #ffa94d;
+    --cv-g: #ffd43b;
+    --cv-boundary: #f59e0b;
+    --cv-region: rgba(120,170,255,0.16);
+    --cv-region-focus: rgba(245,158,11,0.15);
+    --cv-tick: #64748b;
+    --cv-tick-label: #e0e0e0;
+    --cv-flag: #64748b;
+    --cv-aa-match: #4a5568;
+    --cv-aa-diff: #ff6b6b;
+    --cv-aa-diff-bg: rgba(255,107,107,0.18);
+    --cv-aa-bg: #1e293b;
+    --cv-aa-grid: #334155;
+    --cv-tab-ok: #35c493;
+    --cv-tab-ok-bg: #14312a;
+    --cv-tab-warn: #e0a355;
+    --cv-tab-warn-bg: #33280f;
+}
+:root {
+    --cv-bg: #fafafa;
+    --text: #1e293b;
+    --muted: #94a3b8;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+    --panel-line: #dfe3e8;
+    --ok: #0f7a52;
+    --ok-bg: #e8f6ef;
+    --warn: #a1650a;
+    --warn-bg: #fdf3e2;
+    --bad: #c22f2f;
+    --bad-bg: #fdecec;
+    --neutral: #5b6672;
+    --neutral-bg: #eef1f4;
+    /* One gutter width, used by the plot's row labels and by the indent on
+       every text block, so text and plot share a single left edge. */
+    --gutter: 2.5rem;
+    --gutter-gap: 4px;
+    --mono: 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}
+[data-theme="dark"] {
+    --cv-bg: #1a1a2e;
+    --text: #e0e0e0;
+    --muted: #64748b;
+    --card-bg: #16213e;
+    --border: #334155;
+    --panel-line: #2c3a55;
+    --ok: #35c493;
+    --ok-bg: #14312a;
+    --warn: #e0a355;
+    --warn-bg: #33280f;
+    --bad: #f0655f;
+    --bad-bg: #35191c;
+    --neutral: #93a1b0;
+    --neutral-bg: #202b45;
+}
+html, body {
+    background: var(--cv-bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+}
+/* The inset goes on body alone.  Setting it on both nests one inside the other
+   and the page starts at twice the intended distance from every edge. */
+body {
+    /* Room at the top for the fixed view toggle, and no more. */
+    padding: 2.7rem 1.5rem 1.5rem;
+}
+/* Every text block is indented by the plot's label gutter, so prose and
+   pileup share one left edge instead of the two the old negative margin left. */
+.sv-panel, .sv-group-head, .group-sep, .pileup-empty {
+    margin-left: calc(var(--gutter) + var(--gutter-gap));
+}
+/* --- Masthead --- */
+.sv-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.75rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 1.1rem;
+}
+.sv-panel-id {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+.sv-eyebrow {
+    font: 600 0.66rem/1 var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.sv-idline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+.sv-name {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.sv-star {
+    color: var(--warn);
+}
+.sv-facts {
+    font: 0.78rem/1.55 var(--mono);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+/* Each fact explains itself on hover; the cursor is the only standing hint,
+   so the line reads the same as before until someone reaches for it.
+   Gated on [title], the same way the row labels below are: the cursor is a
+   promise of a tooltip, and an element without one must not make it. The
+   legend's own star is the case that got this wrong -- it is the definition of
+   the mark, so there is nothing for it to explain on hover. */
+.sv-fact[title], .sv-star[title] {
+    cursor: help;
+}
+.sv-fact[title]:hover, .sv-star[title]:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+}
+.sv-facts b {
+    color: var(--text);
+    font-weight: 600;
+}
+.sv-highlight {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+/* --- Verdict chip: hue, word, and glyph, so colour is never the only cue --- */
+.sv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.28rem 0.45rem;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+}
+.sv-glyph {
+    font-family: var(--mono);
+    font-size: 0.85em;
+}
+.sv-chip-ok { color: var(--ok); background: var(--ok-bg); }
+.sv-chip-warn { color: var(--warn); background: var(--warn-bg); }
+.sv-chip-bad { color: var(--bad); background: var(--bad-bg); }
+.sv-chip-neutral { color: var(--neutral); background: var(--neutral-bg); }
+.sv-glyph-ok { color: var(--ok); }
+.sv-glyph-warn { color: var(--warn); }
+.sv-glyph-bad { color: var(--bad); }
+.sv-glyph-neutral { color: var(--neutral); }
+/* --- Take-away buttons ---
+   A copy leaves no mark on the page, so the button says what happened in its own
+   label rather than trusting the reader to check the clipboard. */
+.sv-actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+}
+.sv-copy {
+    font: 600 0.7rem/1 var(--mono);
+    color: var(--text);
+    background: var(--card-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 2px;
+    padding: 0.35rem 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.sv-copy:hover {
+    border-color: var(--muted);
+}
+/* --- Views: fixed to the viewport, so the pair does not move between
+   pages, and above the crossfade so it stays legible through it. --- */
+.sv-views-fixed {
+    position: fixed;
+    top: 0.8rem;
+    left: 1.5rem;
+    z-index: 25;
+}
+/* --- Plate map: in the flow over the masthead, right-aligned to the same
+   content edge the masthead uses. --- */
+.sv-plate-row {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 0.5rem calc(var(--gutter) + var(--gutter-gap));
+    line-height: 0;
+}
+.sv-plate { display: block; }
+.sv-well {
+    font: 600 0.78rem var(--mono);
+    color: var(--text);
+    margin-left: 0.55rem;
+    padding: 0.05rem 0.4rem;
+    border: 1px solid var(--muted);
+    border-radius: 3px;
+    cursor: help;
+}
+/* The frame is drawn in the muted ink, not the hairline: the map sits on the
+   page background and a hairline against it disappeared. */
+.sv-plate-frame { fill: var(--card-bg); stroke: var(--muted); stroke-width: 1.2; }
+/* Filled, not outlined: at 384 pitch an outline is under a pixel wide and the
+   grid vanishes, leaving a box with one dot that reads as no plate at all. */
+.sv-plate-well { fill: var(--border); stroke: none; }
+.sv-plate-here { fill: var(--text); }
+.sv-plate-title { font: 500 7px var(--mono); fill: var(--muted); }
+.sv-plate-label { font: 600 8px var(--mono); fill: var(--text); }
+/* The crossfade: the page's own background, drawn over the content.  It starts
+   opaque and clears once the page reports it has drawn, so the reader never
+   sees a page fill in behind a fade that has already finished. */
+.sv-fade {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    pointer-events: none;
+    background: var(--cv-bg);
+    opacity: 1;
+    transition: opacity 180ms ease-out;
+}
+html.sv-ready .sv-fade { opacity: 0; }
+html.sv-leaving .sv-fade {
+    opacity: 1;
+    transition: opacity 90ms ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+    .sv-fade { transition: none; }
+}
+/* --- Views: which page this is, and the other one --- */
+.sv-views {
+    display: inline-flex;
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.sv-view {
+    font: 600 0.68rem/1 var(--mono);
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0.6rem;
+    color: var(--muted);
+    background: var(--card-bg);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.sv-view + .sv-view {
+    border-left: 1px solid var(--panel-line);
+}
+.sv-view:hover {
+    color: var(--text);
+    background: var(--neutral-bg);
+}
+/* The page you are on is not a link, and is filled so that the pair reads as
+   one control with a current position rather than as two buttons. */
+.sv-view[aria-current="page"] {
+    color: var(--text);
+    background: var(--neutral-bg);
+    cursor: default;
+}
+/* The chip is a handle before it is a button: the drag is the thing that can
+   carry a file, and the click is the fallback for browsers that cannot. */
+.sv-drag {
+    cursor: grab;
+}
+.sv-drag:active {
+    cursor: grabbing;
+}
+.sv-copy:active {
+    background: var(--neutral-bg);
+}
+/* --- Key: grouped by what the mark means --- */
+.sv-key {
+    display: flex;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+.sv-kgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.sv-klabel {
+    font: 600 0.6rem/1 var(--mono);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+/* Swatches stack under their label so each group reads as one short column
+   and the labels stay aligned across groups.  The masthead is a wrapping flex
+   row, so on a narrow page the groups wrap as whole columns rather than
+   breaking a group's items across lines. */
+.sv-krow {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-start;
+}
+.sv-kitem {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    color: var(--text);
+    white-space: nowrap;
+}
+.sv-sw {
+    width: 10px;
+    height: 10px;
+    border-radius: 1px;
+    border: 1px solid transparent;
+    display: inline-block;
+    flex: none;
+}
+.sv-sw-tri {
+    width: 0;
+    height: 0;
+    border-radius: 0;
+    border: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid var(--cv-flag);
+}
+/* A small bar in the track's own fill, so the key reads as the row it labels. */
+.sv-sw-mf {
+    background: var(--bad);
+    opacity: 0.85;
+}
+/* The muted half of that scale, so the key shows both weights. */
+.sv-sw-mf-quiet {
+    background: var(--muted);
+    opacity: 0.38;
+}
+.sv-sw-dash {
+    width: 0;
+    height: 11px;
+    border-radius: 0;
+    border: none;
+    border-left: 2px dashed var(--cv-boundary);
+}
+/* --- Per-group header, shown only when there is more than one group --- */
+.sv-group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    /* Longhand: a `margin` shorthand here would reset the gutter indent. */
+    margin-top: 1.25rem;
+    margin-bottom: 0.45rem;
+}
+.sv-group-name {
+    font-weight: 700;
+    font-size: 1rem;
+}
+.pileup-container {
+    margin-bottom: 0.5rem;
+}
+.pileup-outer {
+    display: flex;
+    align-items: stretch;
+}
+.pileup-scroll-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+.pileup-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+}
+.pileup-scroll::-webkit-scrollbar {
+    display: none;
+}
+.pileup-mm-arrow {
+    position: absolute;
+    top: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    font-size: 16px;
+    pointer-events: none;
+    z-index: 2;
+    color: var(--text);
+}
+.pileup-mm-arrow-l { left: 0; background: linear-gradient(to right, var(--cv-bg) 40%, transparent); }
+.pileup-mm-arrow-r { right: 0; background: linear-gradient(to left, var(--cv-bg) 40%, transparent); }
+.pileup-scroll canvas {
+    display: block;
+}
+.pileup-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    width: var(--gutter);
+    padding-right: var(--gutter-gap);
+    font: 9px/1 SF Mono, Menlo, Consolas, monospace;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+}
+.pileup-labels span {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+/* A label that carries a title explains itself on hover, same as .sv-fact
+   in the masthead; the cursor is the only standing hint until then. */
+.pileup-labels span[title] {
+    cursor: help;
+}
+.pileup-labels span[title]:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+}
+.pileup-empty {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-style: italic;
+    padding: 1rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.group-sep {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+/* --- Annotation track ---
+   SVG rather than canvas: a few dozen outlined shapes with text in them want
+   real strokes, real text metrics and a tooltip, none of which canvas gives
+   cheaply.  It lives inside the pileup's scroll container so it travels with
+   the columns it describes.  The per-feature fills are emitted per page, from
+   the colours the reference file carried, so they are not here. */
+.sv-annot {
+    display: block;
+    margin-bottom: 5px;
+}
+.sv-annot path {
+    stroke-width: 1;
+}
+.sv-annot text {
+    font: 10px SF Mono, Menlo, Consolas, monospace;
+    pointer-events: none;
+}
+.sv-annot-out {
+    fill: var(--muted);
+}
+/* --- Region band ---
+   One labelled block naming each span, and nothing else tinted. A wash behind
+   the features, the mismatch track and the ruler said the same thing a third
+   time, in a colour those rows then had to be read through; the band already
+   names the spans and the dashed boundaries already mark their edges. */
+.sv-band {
+    display: block;
+    margin-bottom: 4px;
+}
+.sv-band text {
+    font: 600 11px SF Mono, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+}
+/* Both blocks are drawn the same way -- one fill, one outline, one width --
+   so the band reads as a row of like things. Only the hue separates them: the
+   insert takes the boundary colour it shares with the dashed edges that mark
+   it, the flanks a quieter grey. */
+.sv-band-vec,
+.sv-band-ins {
+    fill: var(--cv-region);
+    stroke-width: 1;
+}
+.sv-band-vec {
+    stroke: var(--border);
+}
+.sv-band-ins {
+    fill: var(--cv-region-focus);
+    stroke: var(--cv-boundary);
+}
+.sv-band-tvec {
+    fill: var(--text);
+    opacity: 0.75;
+}
+.sv-band-tins {
+    fill: var(--cv-boundary);
+}
+/* --- Mismatch frequency track ---
+   Always drawn: one row, disagreement with the reference per
+   position on a log scale between MISMATCH_TRACK_FLOOR and 1.0, so a
+   sub-percent noise floor and a dominant variant are both legible in one row.
+   Gridlines mark 1% and 10%; the upper one is the flag threshold, which the
+   page used to state in a separate row of triangles.  Sits directly under the
+   features track, sharing its columns, so a spike can be read against whatever
+   it falls inside above it. */
+.sv-mf {
+    display: block;
+    margin-bottom: 5px;
+    /* Crosshair, not help: the readout is per position, and the cursor
+       says pick one. A help cursor on this page means "there is a title
+       here", which there is not -- the readout is drawn by script. */
+    cursor: crosshair;
+}
+/* Below the flag threshold: every position carries some disagreement, so the
+   floor is drawn as ground rather than as a finding. */
+.sv-mf-fill {
+    fill: var(--muted);
+    opacity: 0.38;
+}
+/* At or above it. */
+.sv-mf-hot {
+    fill: var(--bad);
+    opacity: 0.85;
+}
+.sv-mf-base {
+    stroke: var(--border);
+    stroke-width: 1;
+}
+.sv-mf-grid {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+/* The scale's numbers live outside the scrolling drawing and stay put, because
+   a scale that scrolls away stops being one. Pinned to the left edge over a fade
+   to the page ground, the same treatment the overflow arrows get: they have to
+   stay legible over whatever bars scroll beneath them.
+
+   One panel the full height of the track, rather than a box per label. The two
+   marks sit about nine pixels apart and each box would be nine tall, so
+   per-label backings would overlap and the lower one would paint over the
+   upper's text. A single ground also hides the bars immediately below a number,
+   which are what made it hard to read. */
+.pileup-mf-marks {
+    position: absolute;
+    left: 0;
+    width: 40px;
+    pointer-events: none;
+    z-index: 2;
+    /* Opaque under the text, then a fixed 14px fade, so the runway does not
+       shrink for a shorter label the way a percentage stop would. */
+    background: linear-gradient(to right,
+        var(--cv-bg) 0,
+        var(--cv-bg) 26px,
+        transparent 40px);
+}
+.pileup-mf-marks span {
+    position: absolute;
+    left: 2px;
+    height: 9px;
+    line-height: 9px;
+    font: 8px var(--mono);
+    color: var(--muted);
+    white-space: nowrap;
+}
+.svf0_0{fill:#3f7f93;fill-opacity:0.55;stroke:#295360}.svf0_t0{fill:#111111}
+[data-theme="dark"] .svf0_0{fill:#63a8bd;stroke:#406d7b}[data-theme="dark"] .svf0_t0{fill:#ffffff}
+
+[data-theme="dark"] {
+    --cv-bg: #302d29;
+    --card-bg: #3b3732;
+    --panel-line: #554f47;
+    --muted: #b0a99e;
+    --cv-tick: #928b80;
+    --cv-tick-label: #ece7df;
+    --cv-flag: #928b80;
+    --cv-match: #675f55;
+    --cv-vector: #565046;
+    --cv-aa-match: #675f55;
+    --cv-aa-bg: #34302b;
+    --cv-aa-grid: #554f47;
+    --cv-depth: #5a5247;
+    --cv-depth-edge: #9a9286;
+    --cv-stem: #9a9286;
+    --cv-ribbon: #675f55;
+    --cv-focus: #a39b8f;
+    --cv-grid: #554f47;
+    --cv-mm-bed: #45403a;
+    --cv-mm-quiet: #7d756a;
+    --cv-neutral-bg: #5c554b;
+}
+
+.sv-fade { display: none; }
+
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
+</style>
+<script>
+/* The one palette, shared with the CSS custom properties above.  A swatch and
+   the cell it describes cannot drift apart because both read this table. */
+var SV_PALETTE = {"light": {"match": "#d4d8dc", "vector": "#e9ebee", "gap": "#ffffff", "a": "#e03131", "t": "#1971c2", "c": "#e8590c", "g": "#e67700", "boundary": "#d97706", "region": "rgba(56,132,255,0.10)", "region-focus": "rgba(217,119,6,0.09)", "tick": "#94a3b8", "tick-label": "#1e293b", "flag": "#94a3b8", "aa-match": "#d1d5db", "aa-diff": "#e03131", "aa-diff-bg": "rgba(224,49,49,0.10)", "aa-bg": "#f8fafc", "aa-grid": "#e5e7eb", "tab-ok": "#0f7a52", "tab-ok-bg": "#e8f6ef", "tab-warn": "#a1650a", "tab-warn-bg": "#fdf3e2"}, "dark": {"match": "#4a5568", "vector": "#3a4455", "gap": "#ffffff", "a": "#ff6b6b", "t": "#339af0", "c": "#ffa94d", "g": "#ffd43b", "boundary": "#f59e0b", "region": "rgba(120,170,255,0.16)", "region-focus": "rgba(245,158,11,0.15)", "tick": "#64748b", "tick-label": "#e0e0e0", "flag": "#64748b", "aa-match": "#4a5568", "aa-diff": "#ff6b6b", "aa-diff-bg": "rgba(255,107,107,0.18)", "aa-bg": "#1e293b", "aa-grid": "#334155", "tab-ok": "#35c493", "tab-ok-bg": "#14312a", "tab-warn": "#e0a355", "tab-warn-bg": "#33280f"}};
+function drawPileup(canvasId, rulerId, labelsId, refSeq, cons, rows, flanks, scrollId, wrapId, refAA, consAA, flaggedCols, cellWIn, annotH, mismatchH, parent, mmRuns, parentAA) {
+  var canvas = document.getElementById(canvasId);
+  var rulerCanvas = document.getElementById(rulerId);
+  var labelsEl = document.getElementById(labelsId);
+  if (!canvas) return;
+  var nCols = refSeq.length;
+  var nRows = rows.length;
+  // Pixels per base is decided by annotate.cell_width and passed in, because
+  // the SVG feature track measures itself with the same number. Recomputing the
+  // rule here would let a glyph sit a pixel off the column it describes.
+  var cellW = cellWIn;
+  // A row is thinner the more of them there are, so a deep pileup still fits a
+  // screen. The floor is 2px rather than 1: a one-pixel row is a hairline that
+  // a fractional device pixel ratio can drop altogether.
+  var cellH = nRows < 100 ? 4 : nRows < 400 ? 3 : 2;
+  var refH = Math.max(cellH, 6);
+  var consH = refH;
+  // The parent sequence, when the caller supplied one: another row the
+  // height of the reference, sitting directly under it so the designed
+  // change reads as the column where the two disagree.
+  var hasParent = !!(parent && parent.length);
+  var parentH = hasParent ? refH : 0;
+  var parentGap = hasParent ? 4 : 0;
+  var gap = 4;
+  var totalW = nCols * cellW;
+  var dpr = window.devicePixelRatio || 1;
+
+  // Translation rows below reads (aligned to insert region)
+  var hasAA = refAA && consAA && flanks;
+  // The parent is the library's baseline, so its translation is the row a
+  // mutation is named against. Drawn last of the three because it is the one a
+  // reader compares the other two back to.
+  var hasParentAA = !!(hasAA && parentAA && parentAA.length);
+  var aaRows = hasAA ? (hasParentAA ? 3 : 2) : 0;
+  var aaH = hasAA ? 14 : 0;       // height of each AA row
+  var aaBlockH = aaRows ? aaRows * aaH + (aaRows - 1) * 2 : 0;
+  var aaGap = hasAA ? 6 : 0;      // gap before AA section
+  // A codon is exactly the three bases it translates. The old floor of 8px
+  // made each glyph 2px wider than its codon whenever cellW was 2 -- every
+  // reference >= 500 bp -- so the drift accumulated linearly and the last of
+  // 266 residues on a 1000 bp insert sat 530px from the bases it came from.
+  // A track that does not line up with the reference cannot be read against it.
+  var aaCodonW = 3 * cellW;
+
+  // Canvas must be wide enough for both the nucleotide pileup and the AA section
+  var aaEndPx = hasAA ? flanks[0] * cellW + refAA.length * aaCodonW : 0;
+  var canvasW = Math.max(totalW, aaEndPx);
+
+  /* Mutation tabs: one per residue the consensus changes, named the way a
+   * mutation is written -- ref residue, position, new residue, so V50I.
+   *
+   * Laid out before the canvas is sized, because how many rows of tabs are
+   * needed decides how tall the canvas has to be. A tab is far wider than the
+   * 6px codon it belongs to, so tabs are packed into rows by first fit and a
+   * stem connects each back to its own codon. Widths are computed here rather
+   * than measured: the face is monospace, so its advance is known, and the
+   * layout has to exist before there is a context to measure with.
+   */
+  var TAB_FONT = 9, TAB_ADVANCE = 0.6, TAB_PAD = 4;
+  var TAB_H = 12, TAB_ROW_GAP = 2, TAB_LEAD = 5, TAB_STEM = 4;
+  var MAX_TAB_ROWS = 4;
+  var mutTabs = [], mutRows = 0, mutDropped = 0;
+  if (hasAA) {
+    var rowEnds = [];
+    /* What a tab names depends on what the page knows.
+     *
+     * With a parent, that is the library's baseline -- a WT -- and mutations are
+     * named against it, which is the convention and the only numbering that
+     * means anything to a reader. The reference is this well's assigned
+     * identity, itself a variant, so a change named against it would be
+     * numbered off an already-mutated sequence.
+     *
+     * Knowing both then answers the question the well exists to answer, and each
+     * tab carries which of the three it is:
+     *
+     *   expected    the consensus moved off the parent, to what the assignment
+     *               said it would be. The designed mutation, confirmed.
+     *   unexpected  it moved off the parent to something else.
+     *   missing     it did not move, but the assignment said it should have.
+     *
+     * With no parent there is only one baseline available, so a tab names the
+     * reference-to-consensus change and has nothing to say about intent.
+     */
+    var namedAgainst = hasParentAA ? parentAA : refAA;
+    var limit = Math.min(refAA.length, consAA.length,
+                         hasParentAA ? parentAA.length : refAA.length);
+    for (var mi = 0; mi < limit; mi++) {
+      var base = namedAgainst[mi], obs = consAA[mi], want = refAA[mi];
+      var kind, name;
+      if (base !== obs) {
+        name = base + (mi + 1) + obs;
+        kind = !hasParentAA ? 'plain' : (obs === want ? 'expected' : 'unexpected');
+      } else if (hasParentAA && want !== base) {
+        // Expected but absent: the well reads as the parent where its assigned
+        // identity says it should not.
+        name = base + (mi + 1) + want;
+        kind = 'missing';
+      } else {
+        continue;
+      }
+      var tabW = name.length * TAB_FONT * TAB_ADVANCE + TAB_PAD * 2;
+      var stemX = flanks[0] * cellW + mi * aaCodonW + aaCodonW / 2;
+      // Keep the tab on the canvas; the stem still points at the real codon.
+      var left = Math.max(0, Math.min(stemX - tabW / 2, canvasW - tabW));
+      var placed = -1;
+      for (var r = 0; r < rowEnds.length; r++) {
+        if (left >= rowEnds[r] + 2) { placed = r; break; }
+      }
+      if (placed < 0) {
+        if (rowEnds.length >= MAX_TAB_ROWS) { mutDropped++; continue; }
+        rowEnds.push(0);
+        placed = rowEnds.length - 1;
+      }
+      rowEnds[placed] = left + tabW;
+      mutTabs.push({name: name, stemX: stemX, left: left, w: tabW, row: placed,
+                    kind: kind});
+    }
+    mutRows = rowEnds.length;
+  }
+  var mutH = mutRows ? TAB_LEAD + TAB_STEM + mutRows * TAB_H
+                       + (mutRows - 1) * TAB_ROW_GAP : 0;
+
+  var pileupH = refH + parentGap + parentH + gap + consH + gap + nRows * cellH + aaGap + aaBlockH + mutH;
+  canvas.width = canvasW * dpr;
+  canvas.height = pileupH * dpr;
+  canvas.style.width = canvasW + 'px';
+  canvas.style.height = pileupH + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var P = SV_PALETTE[isDark ? 'dark' : 'light'];
+  var matchColor = P.match;
+  var vectorMatchColor = P.vector;
+  var gapColor = P.gap;
+  var consMatchColor = matchColor;
+  var baseColors = {'A': P.a, 'T': P.t, 'C': P.c, 'G': P.g};
+  // Flagged columns: positions past the flag threshold, from
+  // summary.flagged_columns. Used only for the off-screen arrows now -- the
+  // mismatch track above the reference draws the magnitude itself, so the
+  // separate row of triangles that used to say "past the threshold here" is
+  // gone. Falls back to consensus-derived mismatches when not provided.
+  var mismatchCols = flaggedCols || [];
+  if (!flaggedCols) {
+    for (var _mi = 0; _mi < cons.length; _mi++) {
+      var _ch = cons[_mi];
+      if (_ch !== '.' && _ch !== '-') mismatchCols.push(_mi);
+    }
+  }
+  function isVector(col) {
+    return flanks && (col < flanks[0] || col >= nCols - flanks[1]);
+  }
+  function pickMatch(col) {
+    return isVector(col) ? vectorMatchColor : matchColor;
+  }
+  // --- Ruler ---
+  var rulerH = 14;
+  if (rulerCanvas) {
+    rulerCanvas.width = canvasW * dpr;
+    rulerCanvas.height = rulerH * dpr;
+    rulerCanvas.style.width = canvasW + 'px';
+    rulerCanvas.style.height = rulerH + 'px';
+    var rc = rulerCanvas.getContext('2d');
+    rc.scale(dpr, dpr);
+    var tickColor = P.tick;
+    var labelColor = P['tick-label'];
+    var boundaryColor = P.boundary;
+    rc.clearRect(0, 0, canvasW, rulerH);
+    var tickBottom = rulerH;
+    // The regions are named by the band above the track now, not by text
+    // floating here, so this only draws their boundaries.
+    var tickRowY = 0;
+    if (flanks) {
+      rc.strokeStyle = boundaryColor;
+      rc.lineWidth = 1;
+      var bLeft = flanks[0] * cellW;
+      var bRight = (nCols - flanks[1]) * cellW;
+      if (flanks[0] > 0) {
+        rc.beginPath(); rc.moveTo(bLeft, 0); rc.lineTo(bLeft, tickBottom); rc.stroke();
+      }
+      if (flanks[1] > 0) {
+        rc.beginPath(); rc.moveTo(bRight, 0); rc.lineTo(bRight, tickBottom); rc.stroke();
+      }
+    }
+    // Tick labels + ticks (stop above triangle row)
+    rc.strokeStyle = tickColor;
+    rc.fillStyle = labelColor;
+    rc.font = '10px SF Mono,Menlo,Consolas,monospace';
+    rc.textBaseline = 'top';
+    for (var i = 0; i < nCols; i++) {
+      var x = i * cellW + cellW / 2;
+      if ((i + 1) % 100 === 0) {
+        rc.strokeStyle = tickColor;
+        rc.beginPath(); rc.moveTo(x, tickRowY + 10); rc.lineTo(x, tickBottom); rc.stroke();
+        rc.fillStyle = labelColor;
+        rc.textAlign = 'center';
+        rc.fillText(String(i + 1), x, tickRowY);
+      } else if ((i + 1) % 50 === 0) {
+        rc.strokeStyle = tickColor;
+        rc.beginPath(); rc.moveTo(x, tickBottom - 3); rc.lineTo(x, tickBottom); rc.stroke();
+      }
+    }
+  }
+  // --- HTML row labels ---
+  var parentY = refH + parentGap;
+  var consY = refH + parentGap + parentH + gap;
+  var readsY = consY + consH + gap;
+  if (labelsEl) {
+    labelsEl.innerHTML = '';
+    if (annotH) {
+      var annotLabel = document.createElement('span');
+      annotLabel.textContent = 'Features';
+      annotLabel.style.height = annotH + 'px';
+      labelsEl.appendChild(annotLabel);
+    }
+    if (mismatchH) {
+      var mismatchLabel = document.createElement('span');
+      mismatchLabel.textContent = 'Mismatches';
+      mismatchLabel.title = 'Share of the reads called at this position that '
+        + 'disagree with the reference. Gaps and uncalled reads count for '
+        + 'neither side. Drawn on a 0-1% scale, so a position above 1% shows '
+        + 'at full height.';
+      mismatchLabel.style.height = mismatchH + 'px';
+      labelsEl.appendChild(mismatchLabel);
+    }
+    var rulerSpacer = document.createElement('span');
+    rulerSpacer.style.height = rulerH + 'px';
+    labelsEl.appendChild(rulerSpacer);
+    var refLabel = document.createElement('span');
+    refLabel.textContent = 'Ref';
+    refLabel.style.height = refH + 'px';
+    labelsEl.appendChild(refLabel);
+    if (hasParent) {
+      var parentGapSpacer = document.createElement('span');
+      parentGapSpacer.style.height = parentGap + 'px';
+      labelsEl.appendChild(parentGapSpacer);
+      var parentLabel = document.createElement('span');
+      parentLabel.textContent = 'Parent';
+      parentLabel.style.height = parentH + 'px';
+      labelsEl.appendChild(parentLabel);
+    }
+    var gapSpacer1 = document.createElement('span');
+    gapSpacer1.style.height = gap + 'px';
+    labelsEl.appendChild(gapSpacer1);
+    var consLabel = document.createElement('span');
+    consLabel.textContent = 'Cons';
+    consLabel.style.height = consH + 'px';
+    labelsEl.appendChild(consLabel);
+    var gapSpacer2 = document.createElement('span');
+    gapSpacer2.style.height = gap + 'px';
+    labelsEl.appendChild(gapSpacer2);
+    if (nRows > 0) {
+      var readsLabel = document.createElement('span');
+      readsLabel.textContent = 'Reads';
+      readsLabel.style.height = (nRows * cellH) + 'px';
+      labelsEl.appendChild(readsLabel);
+    }
+    if (hasAA) {
+      var aaGapSpacer = document.createElement('span');
+      aaGapSpacer.style.height = aaGap + 'px';
+      labelsEl.appendChild(aaGapSpacer);
+      var refAALabel = document.createElement('span');
+      refAALabel.textContent = 'Ref AA';
+      refAALabel.style.height = aaH + 'px';
+      labelsEl.appendChild(refAALabel);
+      var aaRowGap = document.createElement('span');
+      aaRowGap.style.height = '2px';
+      labelsEl.appendChild(aaRowGap);
+      var consAALabel = document.createElement('span');
+      consAALabel.textContent = 'Cons AA';
+      consAALabel.style.height = aaH + 'px';
+      labelsEl.appendChild(consAALabel);
+      if (hasParentAA) {
+        var paaGap = document.createElement('span');
+        paaGap.style.height = '2px';
+        labelsEl.appendChild(paaGap);
+        var parentAALabel = document.createElement('span');
+        parentAALabel.textContent = 'Parent AA';
+        parentAALabel.style.height = aaH + 'px';
+        parentAALabel.title = 'The library baseline. Mutations are named '
+          + 'against it, not against the well\u2019s assigned reference, which '
+          + 'is itself a variant.';
+        labelsEl.appendChild(parentAALabel);
+      }
+      if (mutRows) {
+        var mutLabel = document.createElement('span');
+        mutLabel.textContent = 'Changes';
+        mutLabel.style.height = mutH + 'px';
+        var named = mutTabs.length;
+        // Say what was left out rather than let a page look complete when it
+        // is not; the gutter labels already explain themselves on hover.
+        mutLabel.title = named + (named === 1 ? ' residue changes'
+                                             : ' residues change')
+          + (mutDropped ? ', and ' + mutDropped + ' more not named for want '
+                          + 'of room' : '');
+        labelsEl.appendChild(mutLabel);
+      }
+    }
+  }
+  // --- Reference row ---
+  // The match colour, not a dark bar of its own. Every cell agreeing with the
+  // reference is drawn in it, so the reference being the same colour says what
+  // the row is: the thing the greys below are agreeing with. A near-black bar
+  // read as a separate kind of thing, and there is only one.
+  //
+  // Region-aware, like the read cells: a flank column takes the vector shade,
+  // so a column is one colour from the reference down through the reads.
+  for (var i = 0; i < nCols; i++) {
+    ctx.fillStyle = pickMatch(i);
+    ctx.fillRect(i * cellW, 0, cellW, refH);
+  }
+  // --- Wild-type row ---
+  if (hasParent) {
+    for (var i = 0; i < parent.length; i++) {
+      var wch = parent[i];
+      if (wch === '.') {
+        ctx.fillStyle = pickMatch(i);
+      } else if (wch === '-') {
+        ctx.fillStyle = gapColor;
+      } else {
+        ctx.fillStyle = baseColors[wch] || P.flag;
+      }
+      ctx.fillRect(i * cellW, parentY, cellW, parentH);
+    }
+  }
+  // --- Consensus row ---
+  for (var i = 0; i < cons.length; i++) {
+    var ch = cons[i];
+    if (ch === '.') {
+      ctx.fillStyle = isVector(i) ? vectorMatchColor : consMatchColor;
+    } else if (ch === '-') {
+      ctx.fillStyle = gapColor;
+    } else {
+      ctx.fillStyle = baseColors[ch] || P.flag;
+    }
+    ctx.fillRect(i * cellW, consY, cellW, consH);
+  }
+  // --- Read rows ---
+  for (var r = 0; r < nRows; r++) {
+    var row = rows[r];
+    var y = readsY + r * cellH;
+    for (var c = 0; c < row.length; c++) {
+      var ch = row[c];
+      if (ch === '.') {
+        ctx.fillStyle = pickMatch(c);
+      } else if (ch === '-') {
+        ctx.fillStyle = gapColor;
+      } else {
+        ctx.fillStyle = baseColors[ch] || P.flag;
+      }
+      ctx.fillRect(c * cellW, y, cellW, cellH);
+    }
+  }
+  // --- Translation rows (aligned to insert region) ---
+  var aaY = readsY + nRows * cellH + aaGap;
+  if (hasAA) {
+    var insStart = flanks[0];
+    var aaMatchColor = P['aa-match'];
+    var aaDiffColor = P['aa-diff'];
+    var aaDiffBg = P['aa-diff-bg'];
+    var aaBg = P['aa-bg'];
+    var aaFont = Math.min(aaH - 2, aaCodonW - 1);
+    var lettersFit = aaFont >= 7;
+    ctx.font = aaFont + 'px SF Mono,Menlo,Consolas,monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // At 6px a codon cannot hold a legible letter, so weight carries the
+    // meaning instead: a match is a quiet baseline tick, a mismatch is a full
+    // block. This branch was unreachable while the 8px floor existed.
+    function drawResidue(letter, x, y, isMatch) {
+      if (lettersFit) {
+        ctx.fillText(letter, x + aaCodonW / 2, y + aaH / 2);
+      } else if (isMatch) {
+        ctx.fillRect(x, y + aaH - 3, Math.max(1, aaCodonW - 1), 2);
+      } else {
+        ctx.fillRect(x, y + 1, Math.max(1, aaCodonW - 1), aaH - 2);
+      }
+    }
+
+    // Draw background for the insert region
+    var insX = insStart * cellW;
+    var insW = refAA.length * aaCodonW;
+    ctx.fillStyle = aaBg;
+    ctx.fillRect(insX, aaY, insW, aaBlockH);
+
+    for (var ai = 0; ai < refAA.length; ai++) {
+      var ax = insStart * cellW + ai * aaCodonW;
+      var rAA = refAA[ai];
+      var cAA = consAA[ai];
+      var match = rAA === cAA;
+
+      // Ref AA row
+      if (!match) {
+        ctx.fillStyle = aaDiffBg;
+        ctx.fillRect(ax, aaY, aaCodonW, aaH);
+      }
+      ctx.fillStyle = match ? aaMatchColor : aaDiffColor;
+      drawResidue(rAA, ax, aaY, match);
+
+      // Cons AA row
+      var caaY = aaY + aaH + 2;
+      if (!match) {
+        ctx.fillStyle = aaDiffBg;
+        ctx.fillRect(ax, caaY, aaCodonW, aaH);
+      }
+      ctx.fillStyle = match ? aaMatchColor : aaDiffColor;
+      drawResidue(cAA, ax, caaY, match);
+
+      // Parent AA row: the library baseline. Marked where the consensus has
+      // moved away from it, which is what a mutation name describes.
+      if (hasParentAA) {
+        var pAA = parentAA[ai];
+        var paaY = caaY + aaH + 2;
+        var fromParent = pAA === cAA;
+        if (!fromParent) {
+          ctx.fillStyle = aaDiffBg;
+          ctx.fillRect(ax, paaY, aaCodonW, aaH);
+        }
+        ctx.fillStyle = fromParent ? aaMatchColor : aaDiffColor;
+        drawResidue(pAA === undefined ? '?' : pAA, ax, paaY, fromParent);
+      }
+    }
+
+    // Subtle codon grid lines, but only when the pitch is wide enough that a
+    // line per codon reads as structure rather than as hatching.
+    ctx.strokeStyle = P['aa-grid'];
+    ctx.lineWidth = 0.5;
+    for (var ai = 1; aaCodonW >= 9 && ai < refAA.length; ai++) {
+      var lx = insStart * cellW + ai * aaCodonW;
+      ctx.beginPath(); ctx.moveTo(lx, aaY); ctx.lineTo(lx, aaY + aaBlockH); ctx.stroke();
+    }
+
+    // --- Mutation tabs ---
+    // The AA rows say a residue changed; these say which change it was, in the
+    // notation a person writes it in. A stem ties each tab to its own codon,
+    // because a tab is five times the width of the codon it names and cannot
+    // sit over it.
+    if (mutRows) {
+      var tabTop = aaY + aaBlockH + TAB_LEAD;
+      ctx.font = TAB_FONT + 'px SF Mono,Menlo,Consolas,monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      function tabTopOf(tab) {
+        return tabTop + TAB_STEM + tab.row * (TAB_H + TAB_ROW_GAP);
+      }
+      // Stems first, boxes second. A tab on a lower row reaches past the rows
+      // above it, and those tabs are wider than the codon pitch, so the stem
+      // has to pass behind them -- drawing every box after every stem is what
+      // makes it pass behind rather than through.
+      function tabInk(kind) {
+        if (kind === 'expected') return [P['tab-ok'], P['tab-ok-bg'], false];
+        if (kind === 'missing') return [P['tab-warn'], P['tab-warn-bg'], true];
+        return [aaDiffColor, aaDiffBg, false];
+      }
+      ctx.lineWidth = 1;
+      for (var ti = 0; ti < mutTabs.length; ti++) {
+        var tab = mutTabs[ti];
+        var top = tabTopOf(tab);
+        var centre = tab.left + tab.w / 2;
+        ctx.strokeStyle = tabInk(tab.kind)[0];
+        ctx.beginPath();
+        ctx.moveTo(tab.stemX, aaY + aaBlockH);
+        // Down to just above the tab, then across if the tab had to shift to
+        // stay on the canvas. Stopping at the top edge rather than the middle
+        // keeps the line out of the text.
+        ctx.lineTo(tab.stemX, top - 2);
+        ctx.lineTo(centre, top);
+        ctx.stroke();
+      }
+      for (var ti = 0; ti < mutTabs.length; ti++) {
+        var tab = mutTabs[ti];
+        var top = tabTopOf(tab);
+        // Opaque ground first, then the tint: aa-diff-bg is a translucent
+        // rgba, so tinting alone would let the stems behind the tab show
+        // through its text.
+        var ink = tabInk(tab.kind);
+        ctx.fillStyle = P['aa-bg'];
+        ctx.fillRect(tab.left, top, tab.w, TAB_H);
+        ctx.fillStyle = ink[1];
+        ctx.fillRect(tab.left, top, tab.w, TAB_H);
+        ctx.strokeStyle = ink[0];
+        // A dashed edge for a change the assignment promised and the reads do
+        // not show: the name is what was expected, not what is there.
+        ctx.setLineDash(ink[2] ? [3, 2] : []);
+        ctx.strokeRect(tab.left + 0.5, top + 0.5, tab.w - 1, TAB_H - 1);
+        ctx.setLineDash([]);
+        ctx.fillStyle = ink[0];
+        ctx.fillText(tab.name, tab.left + tab.w / 2, top + TAB_H / 2);
+      }
+    }
+  }
+  // --- Region boundary dashed lines on pileup canvas ---
+  if (flanks) {
+    ctx.save();
+    ctx.strokeStyle = P.boundary;
+    ctx.lineWidth = 1;
+    var pH = pileupH;
+    if (flanks[0] > 0) {
+      var bx = flanks[0] * cellW;
+      ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, pH); ctx.stroke();
+    }
+    if (flanks[1] > 0) {
+      var bx2 = (nCols - flanks[1]) * cellW;
+      ctx.beginPath(); ctx.moveTo(bx2, 0); ctx.lineTo(bx2, pH); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // --- Opening position: the insert, not base 1 ---
+  /* A page is opened to look at the insert; the vector around it is context. So
+   * the first thing on screen is the insert rather than whatever happens to sit
+   * at the left edge of the reference.
+   *
+   * Set before the overflow arrows attach, so their first update reads the
+   * position the reader will actually see. Set on every group, not just one and
+   * mirrored: the mirror only fires on a scroll event, and a group whose pane is
+   * not scrollable never fires one.
+   */
+  if (flanks && scrollId) {
+    var openEl = document.getElementById(scrollId);
+    if (openEl) {
+      var insLeft = flanks[0] * cellW;
+      var insRight = (nCols - flanks[1]) * cellW;
+      var viewW = openEl.clientWidth;
+      var target;
+      if (insRight - insLeft <= viewW) {
+        // It fits: centre it, so both boundary lines are on screen at once.
+        target = (insLeft + insRight) / 2 - viewW / 2;
+      } else {
+        // Wider than the pane: open at its 5' boundary, where reading starts,
+        // rather than somewhere in the middle of it. The margin keeps the
+        // boundary line itself visible instead of flush against the edge.
+        target = insLeft - 12;
+      }
+      var maxLeft = openEl.scrollWidth - viewW;
+      openEl.scrollLeft = Math.max(0, Math.min(target, maxLeft));
+    }
+  }
+  // --- Mismatch overflow arrows ---
+  if (mismatchCols.length > 0 && scrollId && wrapId) {
+    var scrollEl = document.getElementById(scrollId);
+    var wrapEl = document.getElementById(wrapId);
+    if (scrollEl && wrapEl) {
+      var arrowsTop = (annotH || 0) + (mismatchH || 0);
+      var leftArrow = document.createElement('div');
+      leftArrow.className = 'pileup-mm-arrow pileup-mm-arrow-l';
+      leftArrow.textContent = '◄';
+      leftArrow.style.top = arrowsTop + 'px';
+      leftArrow.style.height = rulerH + 'px';
+      wrapEl.appendChild(leftArrow);
+      var rightArrow = document.createElement('div');
+      rightArrow.className = 'pileup-mm-arrow pileup-mm-arrow-r';
+      rightArrow.textContent = '►';
+      rightArrow.style.top = arrowsTop + 'px';
+      rightArrow.style.height = rulerH + 'px';
+      wrapEl.appendChild(rightArrow);
+      function updateMmArrows() {
+        var sl = scrollEl.scrollLeft;
+        var vw = scrollEl.clientWidth;
+        var hasL = false, hasR = false;
+        for (var _ai = 0; _ai < mismatchCols.length; _ai++) {
+          var ax = mismatchCols[_ai] * cellW + cellW / 2;
+          if (ax < sl + 4) hasL = true;
+          if (ax > sl + vw - 4) hasR = true;
+        }
+        leftArrow.style.display = hasL ? 'flex' : 'none';
+        rightArrow.style.display = hasR ? 'flex' : 'none';
+      }
+      scrollEl.addEventListener('scroll', updateMmArrows);
+      updateMmArrows();
+    }
+  }
+  // --- Tooltip ---
+  function regionLabel(col) {
+    if (!flanks) return '';
+    if (col < flanks[0]) return '[5′ vector] ';
+    if (col >= nCols - flanks[1]) return '[3′ vector] ';
+    return '[insert] ';
+  }
+  var tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:4px 8px;'
+    + 'border-radius:4px;font-size:11px;pointer-events:none;display:none;z-index:10;'
+    + 'font-family:SF Mono,Menlo,Consolas,monospace;';
+  document.body.appendChild(tooltip);
+  canvas.addEventListener('mousemove', function(e) {
+    var rect = canvas.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var yp = e.clientY - rect.top;
+    var col = Math.floor(x / cellW);
+    if (col < 0 || col >= nCols) { tooltip.style.display = 'none'; return; }
+    var rl = regionLabel(col);
+    if (yp < refH) {
+      tooltip.textContent = rl + 'Ref pos ' + (col + 1) + ': ' + refSeq[col];
+    } else if (yp < consY + consH) {
+      var ch = cons[col];
+      var base = ch === '.' ? refSeq[col] : ch;
+      var note = ch === '.' ? ' (match)' : ch === '-' ? '' : ' (mismatch)';
+      tooltip.textContent = rl + 'Consensus pos ' + (col + 1) + ': ' + base + note;
+    } else if (hasAA && yp >= aaY && yp < aaY + aaBlockH) {
+      var insStart = flanks[0];
+      // Derived from the drawn geometry, not from the nucleotide rate: reading
+      // the residue index a different way than it was placed is what made the
+      // tooltip name a third, differently wrong residue.
+      var aaIdx = Math.floor((x - insStart * cellW) / aaCodonW);
+      if (aaIdx >= 0 && aaIdx < refAA.length) {
+        var band = Math.min(aaRows - 1,
+                            Math.floor((yp - aaY) / (aaH + 2)));
+        var names = ['Ref', 'Cons', 'Parent'];
+        var seqs = [refAA, consAA, parentAA];
+        var aa = seqs[band] ? seqs[band][aaIdx] : undefined;
+        // Say the residue, then what the other rows read at the same codon, so
+        // hovering any one row answers the comparison rather than half of it.
+        var others = [];
+        for (var bi = 0; bi < aaRows; bi++) {
+          if (bi === band || !seqs[bi]) continue;
+          others.push(names[bi] + ' ' + seqs[bi][aaIdx]);
+        }
+        tooltip.textContent = names[band] + ' AA ' + (aaIdx + 1) + ': ' + aa +
+          (others.length ? '  (' + others.join(', ') + ')' : '');
+      } else {
+        tooltip.style.display = 'none'; return;
+      }
+    } else if (yp >= readsY && yp < readsY + nRows * cellH) {
+      var row_idx = Math.floor((yp - readsY) / cellH);
+      if (row_idx >= 0 && row_idx < nRows) {
+        var ch = rows[row_idx][col];
+        var label = ch === '.' ? refSeq[col] + ' (match)' : ch === '-' ? 'gap' : ch + ' (mismatch)';
+        tooltip.textContent = rl + 'Read ' + (row_idx + 1) + ', pos ' + (col + 1) + ': ' + label;
+      } else {
+        tooltip.style.display = 'none'; return;
+      }
+    } else {
+      tooltip.style.display = 'none'; return;
+    }
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 12) + 'px';
+    tooltip.style.top = (e.clientY - 24) + 'px';
+  });
+  canvas.addEventListener('mouseleave', function() {
+    tooltip.style.display = 'none';
+  });
+
+  // --- Mismatch track readout ---
+  /* The track shows how much a position disagrees; hovering says how much, in
+   * reads rather than in pixels. A bar's height is a log-scaled fraction, which
+   * is readable as "more" or "less" and not as a number, so the number has to be
+   * available some other way.
+   *
+   * One handler over the whole track rather than an element per base. A
+   * per-position rect with a title would be thousands of nodes on a plasmid, and
+   * the track is already one path for exactly that reason.
+   *
+   * The counts arrive run-length encoded -- a mostly-clean reference is long runs
+   * of the same pair -- and are expanded once here rather than searched per
+   * mouse move.
+   */
+  if (mmRuns && mmRuns.length && scrollId) {
+    var mmHost = document.getElementById(scrollId);
+    var mmSvg = mmHost && mmHost.querySelector('svg.sv-mf');
+    if (mmSvg) {
+      var mmDis = new Array(nCols), mmCov = new Array(nCols), mmAt = 0;
+      for (var mr = 0; mr < mmRuns.length; mr++) {
+        for (var mk = 0; mk < mmRuns[mr][0] && mmAt < nCols; mk++) {
+          mmDis[mmAt] = mmRuns[mr][1];
+          mmCov[mmAt] = mmRuns[mr][2];
+          mmAt++;
+        }
+      }
+      mmSvg.addEventListener('mousemove', function(e) {
+        var r = mmSvg.getBoundingClientRect();
+        var col = Math.floor((e.clientX - r.left) / cellW);
+        if (col < 0 || col >= nCols) { tooltip.style.display = 'none'; return; }
+        var dis = mmDis[col], cov = mmCov[col];
+        var text = regionLabel(col) + 'pos ' + (col + 1) + ': ';
+        if (!cov) {
+          text += 'no reads cover this position';
+        } else {
+          text += dis + ' of ' + cov + ' read' + (cov === 1 ? '' : 's') +
+                  ' disagree' + (dis === 1 ? 's' : '') +
+                  ' (' + (100 * dis / cov).toFixed(dis && dis / cov < 0.1 ? 2 : 1) + '%)';
+        }
+        tooltip.textContent = text;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 12) + 'px';
+        tooltip.style.top = (e.clientY - 24) + 'px';
+      });
+      mmSvg.addEventListener('mouseleave', function() {
+        tooltip.style.display = 'none';
+      });
+    }
+  }
+}
+
+/* Mirror horizontal scrolling across every pileup on the page.
+ *
+ * Each group scrolls in its own container, so without this a page of several
+ * groups drifts out of register: the reader lines up a column in one pileup and
+ * the group below it is showing somewhere else. Scrolling is what a reader does
+ * to compare groups, so the groups have to move together.
+ *
+ * scrollLeft is mirrored as a raw pixel offset rather than as a fraction of the
+ * scrollable width. Every group is drawn at the same pixels-per-base, so equal
+ * offsets mean the same reference position even where the groups have different
+ * reference lengths -- which is the register that matters. A fraction would put
+ * them in different places on exactly those pages.
+ *
+ * Assigning scrollLeft here makes the browser fire scroll on the panes being
+ * caught up, which re-enters this handler. Nothing guards against that beyond
+ * the equality check, and nothing needs to: those panes are already at the
+ * target offset, so the second pass assigns nothing and the echo stops. The
+ * half-pixel tolerance is for fractional offsets at fractional zoom, where
+ * assigning a value the pane cannot hold exactly would otherwise leave the two
+ * nudging each other.
+ */
+function syncPileupScrolls() {
+  var panes = [].slice.call(document.querySelectorAll('.pileup-scroll'));
+  if (panes.length < 2) return;
+  panes.forEach(function(pane) {
+    pane.addEventListener('scroll', function() {
+      var left = pane.scrollLeft;
+      panes.forEach(function(other) {
+        if (Math.abs(other.scrollLeft - left) > 0.5) other.scrollLeft = left;
+      });
+    });
+  });
+}
+
+/* --- Copying the page ------------------------------------------------------
+ *
+ * Two things a reader wants to take away: the page itself, to keep or send, and
+ * the plot as a picture, to paste somewhere that is not a browser.
+ *
+ * Both need a click to work at all. The clipboard refuses without user
+ * activation, which is why this lives on a button and cannot be done on load.
+ */
+
+/* The page as it arrived, not as it now stands.
+ *
+ * drawPileup appends to the DOM as it runs -- the row labels, the overflow
+ * arrows, the floating tooltip -- and serialising the live document would bake
+ * those in. Re-opening such a file would then run the scripts again over a page
+ * that already had them, drawing a second set of arrows. The row labels clear
+ * themselves on each run; the rest are removed here.
+ */
+function pileupPageSource() {
+  var clone = document.documentElement.cloneNode(true);
+  [].forEach.call(clone.querySelectorAll('.pileup-mm-arrow'), function (n) {
+    n.parentNode.removeChild(n);
+  });
+  [].forEach.call(clone.querySelectorAll('.pileup-labels'), function (n) {
+    n.innerHTML = '';
+  });
+  [].forEach.call(clone.querySelectorAll('body > div'), function (n) {
+    if (n.style && n.style.position === 'fixed') n.parentNode.removeChild(n);
+  });
+  /* The overlay and the transition state belong to this visit, not to the
+     copy: serialising them mid-fade would save a page covered by its own
+     background. */
+  [].forEach.call(clone.querySelectorAll('.sv-fade'), function (n) {
+    n.parentNode.removeChild(n);
+  });
+  clone.classList.remove('sv-leaving', 'sv-ready');
+  return '<!DOCTYPE html>\n' + clone.outerHTML;
+}
+
+/* One SVG track, rasterised.
+ *
+ * A serialised SVG is loaded as its own document, so the page's stylesheet does
+ * not reach it and every class-based fill would come out black. The stylesheet
+ * is copied into the SVG so the rules travel with it -- the custom properties
+ * included, since the SVG root is that document's :root and the variables
+ * resolve against it.
+ */
+function svgToImage(node, css) {
+  var copy = node.cloneNode(true);
+  copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  var style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = css;
+  copy.insertBefore(style, copy.firstChild);
+  var url = 'data:image/svg+xml;charset=utf-8,'
+    + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    img.onload = function () { resolve(img); };
+    img.onerror = function () { reject(new Error('could not rasterise a track')); };
+    img.src = url;
+  });
+}
+
+/* The plot as one image: every group's tracks and canvases, stacked as they are
+ * drawn, at the full width of the reference rather than the scrolled window.
+ */
+function pileupImageBlob() {
+  var panes = [].slice.call(document.querySelectorAll('.pileup-scroll'));
+  if (!panes.length) return Promise.reject(new Error('nothing to copy'));
+
+  var sheet = document.querySelector('style');
+  var css = sheet ? sheet.textContent : '';
+  var theme = document.documentElement.getAttribute('data-theme');
+  // The clone has no ancestor carrying data-theme, so a dark page would
+  // rasterise with the light values. Re-point the dark rules at :root.
+  if (theme === 'dark') {
+    css = css.replace(/\[data-theme="dark"\]/g, ':root');
+  }
+
+  var jobs = [];
+  var rows = [];
+  var total = 0, width = 0;
+  panes.forEach(function (pane, pi) {
+    if (pi) total += 12;                      // a gap between groups
+    [].forEach.call(pane.children, function (node) {
+      var tag = node.tagName.toLowerCase();
+      var w = node.width && node.width.baseVal
+        ? node.width.baseVal.value : node.width;
+      var h = node.height && node.height.baseVal
+        ? node.height.baseVal.value : node.height;
+      if (tag === 'canvas') {
+        // A canvas is sized in device pixels; its CSS box is the drawn size.
+        w = parseFloat(node.style.width) || node.width;
+        h = parseFloat(node.style.height) || node.height;
+      }
+      if (!w || !h) return;
+      var margin = parseFloat(getComputedStyle(node).marginBottom) || 0;
+      rows.push({node: node, tag: tag, y: total, w: w, h: h});
+      total += h + margin;
+      if (w > width) width = w;
+    });
+  });
+  if (!rows.length) return Promise.reject(new Error('nothing to copy'));
+
+  rows.forEach(function (row) {
+    jobs.push(row.tag === 'canvas'
+      ? Promise.resolve(row.node)
+      : svgToImage(row.node, css));
+  });
+
+  return Promise.all(jobs).then(function (images) {
+    var scale = window.devicePixelRatio || 1;
+    var out = document.createElement('canvas');
+    out.width = Math.ceil(width * scale);
+    out.height = Math.ceil(total * scale);
+    var ctx = out.getContext('2d');
+    ctx.scale(scale, scale);
+    // The page ground, so the image is not transparent where nothing is drawn.
+    ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+    ctx.fillRect(0, 0, width, total);
+    images.forEach(function (img, i) {
+      ctx.drawImage(img, 0, rows[i].y, rows[i].w, rows[i].h);
+    });
+    return new Promise(function (resolve, reject) {
+      out.toBlob(function (blob) {
+        blob ? resolve(blob) : reject(new Error('could not encode the image'));
+      }, 'image/png');
+    });
+  });
+}
+
+/* Where this page sits, and what to call a copy of it.
+ *
+ * A page opened from disk knows its own path, which is the one thing about
+ * "the file" a browser can hand over as text.
+ */
+function pileupFilePath() {
+  if (location.protocol !== 'file:') return '';
+  return decodeURIComponent(location.pathname);
+}
+
+function pileupFileName() {
+  var path = pileupFilePath();
+  var base = path ? path.split('/').pop() : '';
+  if (base) return base;
+  var title = (document.title || 'pileup').replace(/[^A-Za-z0-9._-]+/g, '-');
+  return title.replace(/^-+|-+$/g, '') + '.html';
+}
+
+function copyPileup(kind) {
+  if (kind === 'image') {
+    return pileupImageBlob().then(function (blob) {
+      return navigator.clipboard.write([
+        new ClipboardItem({'image/png': blob})
+      ]);
+    });
+  }
+  var path = pileupFilePath();
+  if (!path) {
+    return Promise.reject(new Error('this page has no path to copy'));
+  }
+  return navigator.clipboard.writeText(path);
+}
+
+/* Dragging the page out as a real file.
+ *
+ * The clipboard cannot carry a file: its safelist is text, HTML and PNG, and
+ * the custom formats Chromium allows are namespaced so that native applications
+ * ignore them. A drag can, through DownloadURL, which Chromium fulfils as a
+ * macOS file promise -- so dragging this chip into Slack or Mail attaches the
+ * page, where pasting never could.
+ *
+ * Two things to know about it. It is Chromium only; Safari does not implement
+ * DownloadURL, and there the chip simply will not drag, which is why clicking
+ * it copies the path instead. And a page opened from disk has an opaque origin,
+ * so the blob URL below reads blob:null/... -- whether the browser will fulfil
+ * a promise from one is its own business, and dragend reports what became of
+ * the drop either way.
+ */
+function bindDragOut(chip) {
+  var url = null;
+  chip.addEventListener('dragstart', function (e) {
+    if (url) URL.revokeObjectURL(url);
+    var blob = new Blob([pileupPageSource()], {type: 'text/html'});
+    url = URL.createObjectURL(blob);
+    try {
+      e.dataTransfer.setData('DownloadURL',
+        'text/html:' + pileupFileName() + ':' + url);
+      e.dataTransfer.effectAllowed = 'copy';
+    } catch (err) {
+      // Safari and anything else without DownloadURL: the drag carries the
+      // path as text, which some targets will at least insert.
+      e.dataTransfer.setData('text/plain', pileupFilePath());
+    }
+  });
+  chip.addEventListener('dragend', function (e) {
+    if (url) { URL.revokeObjectURL(url); url = null; }
+    // dropEffect is 'none' when nothing accepted the drag, which is the only
+    // signal available that the promise was not taken up.
+    if (e.dataTransfer && e.dataTransfer.dropEffect === 'none') {
+      say(chip, 'Not dropped');
+    }
+  });
+}
+
+/* Wire the buttons, and say what happened. A copy leaves no trace on the page,
+ * so without a word back there is no way to tell it worked.
+ */
+/* Say something on the button itself and put it back after. A copy leaves no
+ * trace on the page, so without a word back there is no way to tell it worked.
+ */
+function say(btn, message) {
+  if (btn.dataset.saying) return;
+  var was = btn.dataset.label || btn.textContent;
+  btn.dataset.label = was;
+  btn.dataset.saying = '1';
+  btn.textContent = message;
+  setTimeout(function () {
+    btn.textContent = was;
+    delete btn.dataset.saying;
+  }, 1400);
+}
+
+function bindCopyButtons() {
+  [].forEach.call(document.querySelectorAll('.sv-copy'), function (btn) {
+    if (btn.classList.contains('sv-drag')) bindDragOut(btn);
+    btn.addEventListener('click', function () {
+      if (btn.dataset.saying) return;
+      copyPileup(btn.dataset.copy).then(function () {
+        say(btn, btn.dataset.copy === 'path' ? 'Path copied' : 'Copied');
+      }, function (err) {
+        say(btn, 'Copy failed');
+        btn.title = String(err && err.message || err);
+      });
+    });
+  });
+}
+
+/* The crossfade between this page and its summary.
+ *
+ * revealPage is called once the pileups are drawn, so the overlay lifts on a
+ * page that is finished rather than on one that is about to fill in. The cap is
+ * there because a page slow enough to miss it should be shown part-drawn rather
+ * than held behind a blank screen.
+ */
+var REVEAL_CAP_MS = 700;
+
+function revealPage() {
+  document.documentElement.classList.add('sv-ready');
+}
+
+function bindViewToggle() {
+  window.setTimeout(revealPage, REVEAL_CAP_MS);
+
+  var link = document.querySelector('.sv-views-fixed a.sv-view');
+  if (!link) { return; }
+  var still = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  link.addEventListener('click', function (event) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey
+        || event.shiftKey || event.altKey) { return; }
+    if (still) { return; }          /* navigate at once, with no fade */
+    event.preventDefault();
+    var href = link.getAttribute('href');
+    document.documentElement.classList.add('sv-leaving');
+    window.setTimeout(function () { window.location.href = href; }, 90);
+  });
+}
+</script>
+</head>
+<body>
+<div class="sv-fade"></div>
+<noscript><style>.sv-fade { display: none; }</style></noscript>
+<div class="sv-panel">
+    <div class="sv-panel-id">
+        <div class="sv-eyebrow">Pileup: pUC19 demo</div><div class="sv-idline"><span class="sv-name">clone-1</span><span class="sv-chip sv-chip-bad"><span class="sv-glyph">▲</span>Mismatch</span></div>
+        <div class="sv-facts"><span class="sv-fact" title="Length of the reference these reads are aligned to."><b>1000</b> bp reference</span> &middot; <span class="sv-fact" title="Where the insert starts and ends in reference coordinates, counting from base 1 and including both ends. These are positions, not a count of bases. The flanks outside them are vector.">insert <b>101</b>&ndash;<b>900</b></span> &middot; <span class="sv-fact" title="Reads assigned to this group, out of the page&#x27;s total across all groups."><b>35</b> of <b>35</b> reads</span> &middot; <span class="sv-fact" title="How many of this group&#x27;s reads are plotted as rows below. Shown only when it differs from the number assigned."><b>8</b> rows drawn</span> &middot; <span class="sv-fact" title="Share of the bases the drawn reads actually called that match the reference. Gaps and uncovered positions count for neither side, so a read spanning half the reference with no mismatches is 100%."><b>97.1%</b> identity</span></div>
+        
+    </div>
+    <div class="sv-actions">
+        <button type="button" class="sv-copy sv-drag" draggable="true"
+                data-copy="path"
+                title="Drag into Slack, Mail or Finder to attach this page as a file. Clicking copies its path instead — a browser cannot put a file on the clipboard, only a drag can carry one, and only in Chrome.">Drag or copy path</button>
+        <button type="button" class="sv-copy" data-copy="image"
+                title="Copy the plot as a PNG, to paste into a document or a message. The masthead and the key are not in it.">Copy image</button>
+    </div>
+    <div class="sv-key"><div class="sv-kgroup"><span class="sv-klabel">bases</span><div class="sv-krow"><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-a);"></i>A</span><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-t);"></i>T</span><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-c);"></i>C</span><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-g);"></i>G</span></div></div><div class="sv-kgroup"><span class="sv-klabel">cells</span><div class="sv-krow"><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-match);"></i>match</span><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-vector);"></i>vector</span><span class="sv-kitem"><i class="sv-sw" style="background:var(--cv-gap);border-color:var(--cv-tick)"></i>gap</span></div></div><div class="sv-kgroup"><span class="sv-klabel">marks</span><div class="sv-krow"><span class="sv-kitem"><i class="sv-sw sv-sw-mf"></i>disagreement at or above 10%</span><span class="sv-kitem"><i class="sv-sw sv-sw-mf-quiet"></i>below it, to scale up to 50%</span><span class="sv-kitem"><i class="sv-sw sv-sw-dash"></i>boundary</span></div></div></div>
+</div>
+
+<div class="pileup-container"><div class="pileup-outer"><div class="pileup-labels" id="labels-0"></div><div class="pileup-scroll-wrap" id="wrap-0"><div class="pileup-scroll" id="scroll-0"><svg class="sv-band" width="2000" height="15" viewBox="0 0 2000 15" role="img" aria-label="reference regions"><g><title>5′ vector</title><rect class="sv-band-vec" x="0.5" y="0.5" width="199.0" height="14" rx="2"/><text class="sv-band-tvec" x="100.0" y="7.5" text-anchor="middle" dominant-baseline="central">5′ vector</text></g><g><title>insert</title><rect class="sv-band-ins" x="200.5" y="0.5" width="1599.0" height="14" rx="2"/><text class="sv-band-tins" x="1000.0" y="7.5" text-anchor="middle" dominant-baseline="central">insert</text></g><g><title>3′ vector</title><rect class="sv-band-vec" x="1800.5" y="0.5" width="199.0" height="14" rx="2"/><text class="sv-band-tvec" x="1900.0" y="7.5" text-anchor="middle" dominant-baseline="central">3′ vector</text></g></svg><svg class="sv-annot" width="2000" height="16" viewBox="0 0 2000 16" role="img" aria-label="reference annotations"><g transform="translate(0,0)"><title>CDS →
+insert · 101..900 · 800 bp</title><path class="svf0_0" d="M200.0,0 H1794.0 L1800.0,8.0 L1794.0,16 H200.0 Z"/><text class="svf0_t0" x="1000.0" y="8.0" text-anchor="middle" dominant-baseline="central">CDS</text></g></svg><svg class="sv-mf" width="2000" height="26" viewBox="0 0 2000 26" role="img" aria-label="disagreement with the reference by position"><line class="sv-mf-grid" x1="0" y1="20.8" x2="2000" y2="20.8"/><line class="sv-mf-grid" x1="0" y1="0.0" x2="2000" y2="0.0"/><path class="sv-mf-fill" d="M0,26L0.0,26.0L12.0,26.0L12.0,19.5L14.0,19.5L14.0,26.0L24.0,26.0L24.0,19.5L26.0,19.5L26.0,26.0L30.0,26.0L30.0,13.0L32.0,13.0L32.0,26.0L42.0,26.0L42.0,19.5L44.0,19.5L44.0,26.0L50.0,26.0L50.0,19.5L52.0,19.5L52.0,26.0L54.0,26.0L54.0,19.5L56.0,19.5L56.0,26.0L70.0,26.0L70.0,19.5L72.0,19.5L72.0,26.0L74.0,26.0L74.0,19.5L76.0,19.5L76.0,26.0L82.0,26.0L82.0,19.5L84.0,19.5L84.0,26.0L100.0,26.0L100.0,19.5L102.0,19.5L102.0,26.0L120.0,26.0L120.0,19.5L122.0,19.5L122.0,26.0L134.0,26.0L134.0,19.5L136.0,19.5L136.0,26.0L138.0,26.0L138.0,19.5L142.0,19.5L142.0,26.0L144.0,26.0L144.0,19.5L146.0,19.5L146.0,26.0L148.0,26.0L148.0,19.5L150.0,19.5L150.0,26.0L152.0,26.0L152.0,19.5L154.0,19.5L154.0,26.0L156.0,26.0L156.0,19.5L158.0,19.5L158.0,26.0L166.0,26.0L166.0,6.5L168.0,6.5L168.0,19.5L170.0,19.5L170.0,26.0L176.0,26.0L176.0,19.5L178.0,19.5L178.0,26.0L186.0,26.0L186.0,13.0L188.0,13.0L188.0,26.0L190.0,26.0L190.0,19.5L192.0,19.5L192.0,26.0L198.0,26.0L198.0,19.5L200.0,19.5L200.0,26.0L206.0,26.0L206.0,19.5L208.0,19.5L208.0,26.0L212.0,26.0L212.0,19.5L214.0,19.5L214.0,26.0L218.0,26.0L218.0,13.0L220.0,13.0L220.0,26.0L222.0,26.0L222.0,19.5L226.0,19.5L226.0,26.0L232.0,26.0L232.0,19.5L234.0,19.5L234.0,26.0L236.0,26.0L236.0,19.5L238.0,19.5L238.0,26.0L240.0,26.0L240.0,0.0L242.0,0.0L242.0,26.0L252.0,26.0L252.0,19.5L254.0,19.5L254.0,26.0L256.0,26.0L256.0,19.5L258.0,19.5L258.0,26.0L264.0,26.0L264.0,19.5L266.0,19.5L266.0,26.0L272.0,26.0L272.0,19.5L276.0,19.5L276.0,26.0L288.0,26.0L288.0,19.5L290.0,19.5L290.0,26.0L296.0,26.0L296.0,19.5L298.0,19.5L298.0,26.0L300.0,26.0L300.0,19.5L302.0,19.5L302.0,26.0L304.0,26.0L304.0,19.5L306.0,19.5L306.0,26.0L310.0,26.0L310.0,19.5L312.0,19.5L312.0,13.0L314.0,13.0L314.0,26.0L324.0,26.0L324.0,19.5L326.0,19.5L326.0,26.0L332.0,26.0L332.0,19.5L334.0,19.5L334.0,26.0L366.0,26.0L366.0,19.5L368.0,19.5L368.0,26.0L370.0,26.0L370.0,19.5L372.0,19.5L372.0,26.0L376.0,26.0L376.0,19.5L378.0,19.5L378.0,26.0L382.0,26.0L382.0,19.5L384.0,19.5L384.0,26.0L396.0,26.0L396.0,19.5L398.0,19.5L398.0,26.0L408.0,26.0L408.0,13.0L410.0,13.0L410.0,19.5L412.0,19.5L412.0,26.0L416.0,26.0L416.0,19.5L418.0,19.5L418.0,26.0L424.0,26.0L424.0,19.5L426.0,19.5L426.0,26.0L428.0,26.0L428.0,19.5L430.0,19.5L430.0,26.0L440.0,26.0L440.0,13.0L442.0,13.0L442.0,26.0L452.0,26.0L452.0,6.5L454.0,6.5L454.0,19.5L456.0,19.5L456.0,26.0L462.0,26.0L462.0,19.5L464.0,19.5L464.0,26.0L468.0,26.0L468.0,19.5L470.0,19.5L470.0,26.0L482.0,26.0L482.0,19.5L484.0,19.5L484.0,26.0L486.0,26.0L486.0,19.5L488.0,19.5L488.0,26.0L490.0,26.0L490.0,19.5L492.0,19.5L492.0,26.0L498.0,26.0L498.0,19.5L500.0,19.5L500.0,26.0L516.0,26.0L516.0,19.5L518.0,19.5L518.0,26.0L538.0,26.0L538.0,19.5L540.0,19.5L540.0,26.0L542.0,26.0L542.0,19.5L544.0,19.5L544.0,26.0L548.0,26.0L548.0,19.5L550.0,19.5L550.0,26.0L562.0,26.0L562.0,19.5L564.0,19.5L564.0,26.0L570.0,26.0L570.0,19.5L572.0,19.5L572.0,26.0L574.0,26.0L574.0,19.5L576.0,19.5L576.0,26.0L586.0,26.0L586.0,19.5L588.0,19.5L588.0,26.0L590.0,26.0L590.0,13.0L592.0,13.0L592.0,26.0L598.0,26.0L598.0,19.5L600.0,19.5L600.0,26.0L606.0,26.0L606.0,19.5L608.0,19.5L608.0,26.0L610.0,26.0L610.0,19.5L612.0,19.5L612.0,13.0L614.0,13.0L614.0,26.0L634.0,26.0L634.0,19.5L636.0,19.5L636.0,26.0L650.0,26.0L650.0,19.5L652.0,19.5L652.0,26.0L668.0,26.0L668.0,19.5L672.0,19.5L672.0,26.0L682.0,26.0L682.0,19.5L684.0,19.5L684.0,26.0L690.0,26.0L690.0,13.0L692.0,13.0L692.0,26.0L696.0,26.0L696.0,19.5L698.0,19.5L698.0,26.0L714.0,26.0L714.0,19.5L716.0,19.5L716.0,26.0L718.0,26.0L718.0,19.5L720.0,19.5L720.0,26.0L730.0,26.0L730.0,13.0L732.0,13.0L732.0,26.0L742.0,26.0L742.0,19.5L744.0,19.5L744.0,26.0L748.0,26.0L748.0,19.5L750.0,19.5L750.0,26.0L752.0,26.0L752.0,19.5L754.0,19.5L754.0,26.0L756.0,26.0L756.0,19.5L758.0,19.5L758.0,26.0L782.0,26.0L782.0,19.5L784.0,19.5L784.0,26.0L796.0,26.0L796.0,19.5L798.0,19.5L798.0,26.0L808.0,26.0L808.0,13.0L810.0,13.0L810.0,26.0L814.0,26.0L814.0,19.5L816.0,19.5L816.0,26.0L822.0,26.0L822.0,19.5L824.0,19.5L824.0,26.0L840.0,26.0L840.0,19.5L844.0,19.5L844.0,26.0L856.0,26.0L856.0,19.5L858.0,19.5L858.0,26.0L870.0,26.0L870.0,13.0L872.0,13.0L872.0,26.0L886.0,26.0L886.0,19.5L888.0,19.5L888.0,26.0L898.0,26.0L898.0,19.5L902.0,19.5L902.0,26.0L916.0,26.0L916.0,19.5L918.0,19.5L918.0,26.0L922.0,26.0L922.0,19.5L924.0,19.5L924.0,26.0L932.0,26.0L932.0,19.5L936.0,19.5L936.0,26.0L938.0,26.0L938.0,13.0L940.0,13.0L940.0,19.5L942.0,19.5L942.0,26.0L952.0,26.0L952.0,19.5L954.0,19.5L954.0,26.0L958.0,26.0L958.0,13.0L960.0,13.0L960.0,26.0L962.0,26.0L962.0,19.5L964.0,19.5L964.0,26.0L966.0,26.0L966.0,19.5L968.0,19.5L968.0,26.0L972.0,26.0L972.0,19.5L976.0,19.5L976.0,26.0L982.0,26.0L982.0,19.5L984.0,19.5L984.0,26.0L988.0,26.0L988.0,19.5L992.0,19.5L992.0,26.0L1010.0,26.0L1010.0,19.5L1014.0,19.5L1014.0,26.0L1022.0,26.0L1022.0,19.5L1024.0,19.5L1024.0,26.0L1038.0,26.0L1038.0,19.5L1040.0,19.5L1040.0,26.0L1050.0,26.0L1050.0,19.5L1052.0,19.5L1052.0,26.0L1056.0,26.0L1056.0,19.5L1058.0,19.5L1058.0,13.0L1060.0,13.0L1060.0,26.0L1068.0,26.0L1068.0,19.5L1072.0,19.5L1072.0,26.0L1078.0,26.0L1078.0,19.5L1080.0,19.5L1080.0,26.0L1084.0,26.0L1084.0,19.5L1086.0,19.5L1086.0,26.0L1088.0,26.0L1088.0,19.5L1090.0,19.5L1090.0,26.0L1092.0,26.0L1092.0,19.5L1094.0,19.5L1094.0,26.0L1102.0,26.0L1102.0,19.5L1104.0,19.5L1104.0,26.0L1106.0,26.0L1106.0,19.5L1108.0,19.5L1108.0,26.0L1110.0,26.0L1110.0,19.5L1112.0,19.5L1112.0,26.0L1122.0,26.0L1122.0,19.5L1124.0,19.5L1124.0,13.0L1126.0,13.0L1126.0,19.5L1128.0,19.5L1128.0,26.0L1132.0,26.0L1132.0,19.5L1134.0,19.5L1134.0,26.0L1138.0,26.0L1138.0,19.5L1140.0,19.5L1140.0,26.0L1156.0,26.0L1156.0,13.0L1158.0,13.0L1158.0,26.0L1162.0,26.0L1162.0,19.5L1168.0,19.5L1168.0,26.0L1172.0,26.0L1172.0,19.5L1174.0,19.5L1174.0,26.0L1178.0,26.0L1178.0,19.5L1180.0,19.5L1180.0,26.0L1196.0,26.0L1196.0,19.5L1200.0,19.5L1200.0,26.0L1204.0,26.0L1204.0,13.0L1206.0,13.0L1206.0,26.0L1208.0,26.0L1208.0,13.0L1210.0,13.0L1210.0,26.0L1212.0,26.0L1212.0,19.5L1214.0,19.5L1214.0,26.0L1218.0,26.0L1218.0,19.5L1220.0,19.5L1220.0,26.0L1222.0,26.0L1222.0,19.5L1224.0,19.5L1224.0,26.0L1230.0,26.0L1230.0,19.5L1232.0,19.5L1232.0,26.0L1240.0,26.0L1240.0,19.5L1244.0,19.5L1244.0,26.0L1248.0,26.0L1248.0,19.5L1250.0,19.5L1250.0,26.0L1252.0,26.0L1252.0,19.5L1254.0,19.5L1254.0,26.0L1268.0,26.0L1268.0,19.5L1270.0,19.5L1270.0,26.0L1286.0,26.0L1286.0,19.5L1288.0,19.5L1288.0,26.0L1292.0,26.0L1292.0,13.0L1294.0,13.0L1294.0,26.0L1296.0,26.0L1296.0,19.5L1300.0,19.5L1300.0,26.0L1312.0,26.0L1312.0,13.0L1314.0,13.0L1314.0,26.0L1320.0,26.0L1320.0,19.5L1324.0,19.5L1324.0,26.0L1328.0,26.0L1328.0,19.5L1330.0,19.5L1330.0,26.0L1344.0,26.0L1344.0,19.5L1346.0,19.5L1346.0,26.0L1356.0,26.0L1356.0,19.5L1358.0,19.5L1358.0,26.0L1364.0,26.0L1364.0,19.5L1366.0,19.5L1366.0,26.0L1376.0,26.0L1376.0,19.5L1378.0,19.5L1378.0,13.0L1380.0,13.0L1380.0,19.5L1382.0,19.5L1382.0,26.0L1384.0,26.0L1384.0,19.5L1386.0,19.5L1386.0,26.0L1388.0,26.0L1388.0,19.5L1392.0,19.5L1392.0,26.0L1412.0,26.0L1412.0,19.5L1414.0,19.5L1414.0,26.0L1416.0,26.0L1416.0,13.0L1418.0,13.0L1418.0,26.0L1422.0,26.0L1422.0,19.5L1424.0,19.5L1424.0,26.0L1430.0,26.0L1430.0,19.5L1434.0,19.5L1434.0,26.0L1438.0,26.0L1438.0,19.5L1442.0,19.5L1442.0,26.0L1446.0,26.0L1446.0,19.5L1448.0,19.5L1448.0,26.0L1450.0,26.0L1450.0,13.0L1452.0,13.0L1452.0,26.0L1456.0,26.0L1456.0,13.0L1458.0,13.0L1458.0,26.0L1460.0,26.0L1460.0,13.0L1462.0,13.0L1462.0,26.0L1468.0,26.0L1468.0,13.0L1470.0,13.0L1470.0,26.0L1486.0,26.0L1486.0,19.5L1488.0,19.5L1488.0,26.0L1500.0,26.0L1500.0,13.0L1502.0,13.0L1502.0,19.5L1504.0,19.5L1504.0,26.0L1514.0,26.0L1514.0,19.5L1516.0,19.5L1516.0,26.0L1526.0,26.0L1526.0,19.5L1528.0,19.5L1528.0,26.0L1534.0,26.0L1534.0,19.5L1536.0,19.5L1536.0,26.0L1548.0,26.0L1548.0,19.5L1552.0,19.5L1552.0,26.0L1554.0,26.0L1554.0,19.5L1556.0,19.5L1556.0,26.0L1562.0,26.0L1562.0,13.0L1564.0,13.0L1564.0,26.0L1568.0,26.0L1568.0,19.5L1572.0,19.5L1572.0,26.0L1574.0,26.0L1574.0,13.0L1576.0,13.0L1576.0,26.0L1594.0,26.0L1594.0,19.5L1596.0,19.5L1596.0,26.0L1604.0,26.0L1604.0,19.5L1608.0,19.5L1608.0,26.0L1614.0,26.0L1614.0,19.5L1616.0,19.5L1616.0,26.0L1624.0,26.0L1624.0,19.5L1626.0,19.5L1626.0,26.0L1642.0,26.0L1642.0,19.5L1644.0,19.5L1644.0,13.0L1646.0,13.0L1646.0,26.0L1650.0,26.0L1650.0,19.5L1652.0,19.5L1652.0,6.5L1654.0,6.5L1654.0,26.0L1670.0,26.0L1670.0,19.5L1672.0,19.5L1672.0,26.0L1676.0,26.0L1676.0,19.5L1678.0,19.5L1678.0,26.0L1688.0,26.0L1688.0,19.5L1690.0,19.5L1690.0,26.0L1694.0,26.0L1694.0,19.5L1698.0,19.5L1698.0,26.0L1700.0,26.0L1700.0,19.5L1702.0,19.5L1702.0,26.0L1706.0,26.0L1706.0,13.0L1708.0,13.0L1708.0,26.0L1712.0,26.0L1712.0,19.5L1714.0,19.5L1714.0,26.0L1720.0,26.0L1720.0,19.5L1722.0,19.5L1722.0,26.0L1728.0,26.0L1728.0,13.0L1730.0,13.0L1730.0,26.0L1732.0,26.0L1732.0,13.0L1734.0,13.0L1734.0,26.0L1736.0,26.0L1736.0,19.5L1740.0,19.5L1740.0,26.0L1742.0,26.0L1742.0,19.5L1744.0,19.5L1744.0,26.0L1746.0,26.0L1746.0,19.5L1748.0,19.5L1748.0,26.0L1758.0,26.0L1758.0,19.5L1762.0,19.5L1762.0,26.0L1772.0,26.0L1772.0,19.5L1774.0,19.5L1774.0,26.0L1776.0,26.0L1776.0,19.5L1778.0,19.5L1778.0,26.0L1794.0,26.0L1794.0,19.5L1796.0,19.5L1796.0,13.0L1798.0,13.0L1798.0,26.0L1800.0,26.0L1800.0,19.5L1804.0,19.5L1804.0,26.0L1808.0,26.0L1808.0,19.5L1810.0,19.5L1810.0,26.0L1816.0,26.0L1816.0,13.0L1818.0,13.0L1818.0,26.0L1826.0,26.0L1826.0,19.5L1830.0,19.5L1830.0,26.0L1834.0,26.0L1834.0,19.5L1836.0,19.5L1836.0,26.0L1840.0,26.0L1840.0,19.5L1846.0,19.5L1846.0,26.0L1848.0,26.0L1848.0,19.5L1850.0,19.5L1850.0,26.0L1854.0,26.0L1854.0,13.0L1856.0,13.0L1856.0,26.0L1864.0,26.0L1864.0,13.0L1866.0,13.0L1866.0,19.5L1872.0,19.5L1872.0,26.0L1876.0,26.0L1876.0,19.5L1878.0,19.5L1878.0,26.0L1882.0,26.0L1882.0,19.5L1886.0,19.5L1886.0,26.0L1896.0,26.0L1896.0,19.5L1900.0,19.5L1900.0,26.0L1906.0,26.0L1906.0,19.5L1908.0,19.5L1908.0,26.0L1926.0,26.0L1926.0,19.5L1928.0,19.5L1928.0,26.0L1932.0,26.0L1932.0,19.5L1934.0,19.5L1934.0,26.0L1946.0,26.0L1946.0,19.5L1952.0,19.5L1952.0,26.0L1968.0,26.0L1968.0,19.5L1970.0,19.5L1970.0,26.0L1982.0,26.0L1982.0,19.5L1984.0,19.5L1984.0,26.0L1990.0,26.0L1990.0,19.5L1994.0,19.5L1994.0,26.0L1996.0,26.0L1996.0,13.0L1998.0,13.0L1998.0,26.0L2000.0,26.0L2000,26Z"/><path class="sv-mf-hot" d="M12.0,26L12.0,19.5L14.0,19.5L14.0,26ZM24.0,26L24.0,19.5L26.0,19.5L26.0,26ZM30.0,26L30.0,13.0L32.0,13.0L32.0,26ZM42.0,26L42.0,19.5L44.0,19.5L44.0,26ZM50.0,26L50.0,19.5L52.0,19.5L52.0,26ZM54.0,26L54.0,19.5L56.0,19.5L56.0,26ZM70.0,26L70.0,19.5L72.0,19.5L72.0,26ZM74.0,26L74.0,19.5L76.0,19.5L76.0,26ZM82.0,26L82.0,19.5L84.0,19.5L84.0,26ZM100.0,26L100.0,19.5L102.0,19.5L102.0,26ZM120.0,26L120.0,19.5L122.0,19.5L122.0,26ZM134.0,26L134.0,19.5L136.0,19.5L136.0,26ZM138.0,26L138.0,19.5L142.0,19.5L142.0,26ZM144.0,26L144.0,19.5L146.0,19.5L146.0,26ZM148.0,26L148.0,19.5L150.0,19.5L150.0,26ZM152.0,26L152.0,19.5L154.0,19.5L154.0,26ZM156.0,26L156.0,19.5L158.0,19.5L158.0,26ZM166.0,26L166.0,6.5L168.0,6.5L168.0,19.5L170.0,19.5L170.0,26ZM176.0,26L176.0,19.5L178.0,19.5L178.0,26ZM186.0,26L186.0,13.0L188.0,13.0L188.0,26ZM190.0,26L190.0,19.5L192.0,19.5L192.0,26ZM198.0,26L198.0,19.5L200.0,19.5L200.0,26ZM206.0,26L206.0,19.5L208.0,19.5L208.0,26ZM212.0,26L212.0,19.5L214.0,19.5L214.0,26ZM218.0,26L218.0,13.0L220.0,13.0L220.0,26ZM222.0,26L222.0,19.5L226.0,19.5L226.0,26ZM232.0,26L232.0,19.5L234.0,19.5L234.0,26ZM236.0,26L236.0,19.5L238.0,19.5L238.0,26ZM240.0,26L240.0,0.0L242.0,0.0L242.0,26ZM252.0,26L252.0,19.5L254.0,19.5L254.0,26ZM256.0,26L256.0,19.5L258.0,19.5L258.0,26ZM264.0,26L264.0,19.5L266.0,19.5L266.0,26ZM272.0,26L272.0,19.5L276.0,19.5L276.0,26ZM288.0,26L288.0,19.5L290.0,19.5L290.0,26ZM296.0,26L296.0,19.5L298.0,19.5L298.0,26ZM300.0,26L300.0,19.5L302.0,19.5L302.0,26ZM304.0,26L304.0,19.5L306.0,19.5L306.0,26ZM310.0,26L310.0,19.5L312.0,19.5L312.0,13.0L314.0,13.0L314.0,26ZM324.0,26L324.0,19.5L326.0,19.5L326.0,26ZM332.0,26L332.0,19.5L334.0,19.5L334.0,26ZM366.0,26L366.0,19.5L368.0,19.5L368.0,26ZM370.0,26L370.0,19.5L372.0,19.5L372.0,26ZM376.0,26L376.0,19.5L378.0,19.5L378.0,26ZM382.0,26L382.0,19.5L384.0,19.5L384.0,26ZM396.0,26L396.0,19.5L398.0,19.5L398.0,26ZM408.0,26L408.0,13.0L410.0,13.0L410.0,19.5L412.0,19.5L412.0,26ZM416.0,26L416.0,19.5L418.0,19.5L418.0,26ZM424.0,26L424.0,19.5L426.0,19.5L426.0,26ZM428.0,26L428.0,19.5L430.0,19.5L430.0,26ZM440.0,26L440.0,13.0L442.0,13.0L442.0,26ZM452.0,26L452.0,6.5L454.0,6.5L454.0,19.5L456.0,19.5L456.0,26ZM462.0,26L462.0,19.5L464.0,19.5L464.0,26ZM468.0,26L468.0,19.5L470.0,19.5L470.0,26ZM482.0,26L482.0,19.5L484.0,19.5L484.0,26ZM486.0,26L486.0,19.5L488.0,19.5L488.0,26ZM490.0,26L490.0,19.5L492.0,19.5L492.0,26ZM498.0,26L498.0,19.5L500.0,19.5L500.0,26ZM516.0,26L516.0,19.5L518.0,19.5L518.0,26ZM538.0,26L538.0,19.5L540.0,19.5L540.0,26ZM542.0,26L542.0,19.5L544.0,19.5L544.0,26ZM548.0,26L548.0,19.5L550.0,19.5L550.0,26ZM562.0,26L562.0,19.5L564.0,19.5L564.0,26ZM570.0,26L570.0,19.5L572.0,19.5L572.0,26ZM574.0,26L574.0,19.5L576.0,19.5L576.0,26ZM586.0,26L586.0,19.5L588.0,19.5L588.0,26ZM590.0,26L590.0,13.0L592.0,13.0L592.0,26ZM598.0,26L598.0,19.5L600.0,19.5L600.0,26ZM606.0,26L606.0,19.5L608.0,19.5L608.0,26ZM610.0,26L610.0,19.5L612.0,19.5L612.0,13.0L614.0,13.0L614.0,26ZM634.0,26L634.0,19.5L636.0,19.5L636.0,26ZM650.0,26L650.0,19.5L652.0,19.5L652.0,26ZM668.0,26L668.0,19.5L672.0,19.5L672.0,26ZM682.0,26L682.0,19.5L684.0,19.5L684.0,26ZM690.0,26L690.0,13.0L692.0,13.0L692.0,26ZM696.0,26L696.0,19.5L698.0,19.5L698.0,26ZM714.0,26L714.0,19.5L716.0,19.5L716.0,26ZM718.0,26L718.0,19.5L720.0,19.5L720.0,26ZM730.0,26L730.0,13.0L732.0,13.0L732.0,26ZM742.0,26L742.0,19.5L744.0,19.5L744.0,26ZM748.0,26L748.0,19.5L750.0,19.5L750.0,26ZM752.0,26L752.0,19.5L754.0,19.5L754.0,26ZM756.0,26L756.0,19.5L758.0,19.5L758.0,26ZM782.0,26L782.0,19.5L784.0,19.5L784.0,26ZM796.0,26L796.0,19.5L798.0,19.5L798.0,26ZM808.0,26L808.0,13.0L810.0,13.0L810.0,26ZM814.0,26L814.0,19.5L816.0,19.5L816.0,26ZM822.0,26L822.0,19.5L824.0,19.5L824.0,26ZM840.0,26L840.0,19.5L844.0,19.5L844.0,26ZM856.0,26L856.0,19.5L858.0,19.5L858.0,26ZM870.0,26L870.0,13.0L872.0,13.0L872.0,26ZM886.0,26L886.0,19.5L888.0,19.5L888.0,26ZM898.0,26L898.0,19.5L902.0,19.5L902.0,26ZM916.0,26L916.0,19.5L918.0,19.5L918.0,26ZM922.0,26L922.0,19.5L924.0,19.5L924.0,26ZM932.0,26L932.0,19.5L936.0,19.5L936.0,26ZM938.0,26L938.0,13.0L940.0,13.0L940.0,19.5L942.0,19.5L942.0,26ZM952.0,26L952.0,19.5L954.0,19.5L954.0,26ZM958.0,26L958.0,13.0L960.0,13.0L960.0,26ZM962.0,26L962.0,19.5L964.0,19.5L964.0,26ZM966.0,26L966.0,19.5L968.0,19.5L968.0,26ZM972.0,26L972.0,19.5L976.0,19.5L976.0,26ZM982.0,26L982.0,19.5L984.0,19.5L984.0,26ZM988.0,26L988.0,19.5L992.0,19.5L992.0,26ZM1010.0,26L1010.0,19.5L1014.0,19.5L1014.0,26ZM1022.0,26L1022.0,19.5L1024.0,19.5L1024.0,26ZM1038.0,26L1038.0,19.5L1040.0,19.5L1040.0,26ZM1050.0,26L1050.0,19.5L1052.0,19.5L1052.0,26ZM1056.0,26L1056.0,19.5L1058.0,19.5L1058.0,13.0L1060.0,13.0L1060.0,26ZM1068.0,26L1068.0,19.5L1072.0,19.5L1072.0,26ZM1078.0,26L1078.0,19.5L1080.0,19.5L1080.0,26ZM1084.0,26L1084.0,19.5L1086.0,19.5L1086.0,26ZM1088.0,26L1088.0,19.5L1090.0,19.5L1090.0,26ZM1092.0,26L1092.0,19.5L1094.0,19.5L1094.0,26ZM1102.0,26L1102.0,19.5L1104.0,19.5L1104.0,26ZM1106.0,26L1106.0,19.5L1108.0,19.5L1108.0,26ZM1110.0,26L1110.0,19.5L1112.0,19.5L1112.0,26ZM1122.0,26L1122.0,19.5L1124.0,19.5L1124.0,13.0L1126.0,13.0L1126.0,19.5L1128.0,19.5L1128.0,26ZM1132.0,26L1132.0,19.5L1134.0,19.5L1134.0,26ZM1138.0,26L1138.0,19.5L1140.0,19.5L1140.0,26ZM1156.0,26L1156.0,13.0L1158.0,13.0L1158.0,26ZM1162.0,26L1162.0,19.5L1168.0,19.5L1168.0,26ZM1172.0,26L1172.0,19.5L1174.0,19.5L1174.0,26ZM1178.0,26L1178.0,19.5L1180.0,19.5L1180.0,26ZM1196.0,26L1196.0,19.5L1200.0,19.5L1200.0,26ZM1204.0,26L1204.0,13.0L1206.0,13.0L1206.0,26ZM1208.0,26L1208.0,13.0L1210.0,13.0L1210.0,26ZM1212.0,26L1212.0,19.5L1214.0,19.5L1214.0,26ZM1218.0,26L1218.0,19.5L1220.0,19.5L1220.0,26ZM1222.0,26L1222.0,19.5L1224.0,19.5L1224.0,26ZM1230.0,26L1230.0,19.5L1232.0,19.5L1232.0,26ZM1240.0,26L1240.0,19.5L1244.0,19.5L1244.0,26ZM1248.0,26L1248.0,19.5L1250.0,19.5L1250.0,26ZM1252.0,26L1252.0,19.5L1254.0,19.5L1254.0,26ZM1268.0,26L1268.0,19.5L1270.0,19.5L1270.0,26ZM1286.0,26L1286.0,19.5L1288.0,19.5L1288.0,26ZM1292.0,26L1292.0,13.0L1294.0,13.0L1294.0,26ZM1296.0,26L1296.0,19.5L1300.0,19.5L1300.0,26ZM1312.0,26L1312.0,13.0L1314.0,13.0L1314.0,26ZM1320.0,26L1320.0,19.5L1324.0,19.5L1324.0,26ZM1328.0,26L1328.0,19.5L1330.0,19.5L1330.0,26ZM1344.0,26L1344.0,19.5L1346.0,19.5L1346.0,26ZM1356.0,26L1356.0,19.5L1358.0,19.5L1358.0,26ZM1364.0,26L1364.0,19.5L1366.0,19.5L1366.0,26ZM1376.0,26L1376.0,19.5L1378.0,19.5L1378.0,13.0L1380.0,13.0L1380.0,19.5L1382.0,19.5L1382.0,26ZM1384.0,26L1384.0,19.5L1386.0,19.5L1386.0,26ZM1388.0,26L1388.0,19.5L1392.0,19.5L1392.0,26ZM1412.0,26L1412.0,19.5L1414.0,19.5L1414.0,26ZM1416.0,26L1416.0,13.0L1418.0,13.0L1418.0,26ZM1422.0,26L1422.0,19.5L1424.0,19.5L1424.0,26ZM1430.0,26L1430.0,19.5L1434.0,19.5L1434.0,26ZM1438.0,26L1438.0,19.5L1442.0,19.5L1442.0,26ZM1446.0,26L1446.0,19.5L1448.0,19.5L1448.0,26ZM1450.0,26L1450.0,13.0L1452.0,13.0L1452.0,26ZM1456.0,26L1456.0,13.0L1458.0,13.0L1458.0,26ZM1460.0,26L1460.0,13.0L1462.0,13.0L1462.0,26ZM1468.0,26L1468.0,13.0L1470.0,13.0L1470.0,26ZM1486.0,26L1486.0,19.5L1488.0,19.5L1488.0,26ZM1500.0,26L1500.0,13.0L1502.0,13.0L1502.0,19.5L1504.0,19.5L1504.0,26ZM1514.0,26L1514.0,19.5L1516.0,19.5L1516.0,26ZM1526.0,26L1526.0,19.5L1528.0,19.5L1528.0,26ZM1534.0,26L1534.0,19.5L1536.0,19.5L1536.0,26ZM1548.0,26L1548.0,19.5L1552.0,19.5L1552.0,26ZM1554.0,26L1554.0,19.5L1556.0,19.5L1556.0,26ZM1562.0,26L1562.0,13.0L1564.0,13.0L1564.0,26ZM1568.0,26L1568.0,19.5L1572.0,19.5L1572.0,26ZM1574.0,26L1574.0,13.0L1576.0,13.0L1576.0,26ZM1594.0,26L1594.0,19.5L1596.0,19.5L1596.0,26ZM1604.0,26L1604.0,19.5L1608.0,19.5L1608.0,26ZM1614.0,26L1614.0,19.5L1616.0,19.5L1616.0,26ZM1624.0,26L1624.0,19.5L1626.0,19.5L1626.0,26ZM1642.0,26L1642.0,19.5L1644.0,19.5L1644.0,13.0L1646.0,13.0L1646.0,26ZM1650.0,26L1650.0,19.5L1652.0,19.5L1652.0,6.5L1654.0,6.5L1654.0,26ZM1670.0,26L1670.0,19.5L1672.0,19.5L1672.0,26ZM1676.0,26L1676.0,19.5L1678.0,19.5L1678.0,26ZM1688.0,26L1688.0,19.5L1690.0,19.5L1690.0,26ZM1694.0,26L1694.0,19.5L1698.0,19.5L1698.0,26ZM1700.0,26L1700.0,19.5L1702.0,19.5L1702.0,26ZM1706.0,26L1706.0,13.0L1708.0,13.0L1708.0,26ZM1712.0,26L1712.0,19.5L1714.0,19.5L1714.0,26ZM1720.0,26L1720.0,19.5L1722.0,19.5L1722.0,26ZM1728.0,26L1728.0,13.0L1730.0,13.0L1730.0,26ZM1732.0,26L1732.0,13.0L1734.0,13.0L1734.0,26ZM1736.0,26L1736.0,19.5L1740.0,19.5L1740.0,26ZM1742.0,26L1742.0,19.5L1744.0,19.5L1744.0,26ZM1746.0,26L1746.0,19.5L1748.0,19.5L1748.0,26ZM1758.0,26L1758.0,19.5L1762.0,19.5L1762.0,26ZM1772.0,26L1772.0,19.5L1774.0,19.5L1774.0,26ZM1776.0,26L1776.0,19.5L1778.0,19.5L1778.0,26ZM1794.0,26L1794.0,19.5L1796.0,19.5L1796.0,13.0L1798.0,13.0L1798.0,26ZM1800.0,26L1800.0,19.5L1804.0,19.5L1804.0,26ZM1808.0,26L1808.0,19.5L1810.0,19.5L1810.0,26ZM1816.0,26L1816.0,13.0L1818.0,13.0L1818.0,26ZM1826.0,26L1826.0,19.5L1830.0,19.5L1830.0,26ZM1834.0,26L1834.0,19.5L1836.0,19.5L1836.0,26ZM1840.0,26L1840.0,19.5L1846.0,19.5L1846.0,26ZM1848.0,26L1848.0,19.5L1850.0,19.5L1850.0,26ZM1854.0,26L1854.0,13.0L1856.0,13.0L1856.0,26ZM1864.0,26L1864.0,13.0L1866.0,13.0L1866.0,19.5L1872.0,19.5L1872.0,26ZM1876.0,26L1876.0,19.5L1878.0,19.5L1878.0,26ZM1882.0,26L1882.0,19.5L1886.0,19.5L1886.0,26ZM1896.0,26L1896.0,19.5L1900.0,19.5L1900.0,26ZM1906.0,26L1906.0,19.5L1908.0,19.5L1908.0,26ZM1926.0,26L1926.0,19.5L1928.0,19.5L1928.0,26ZM1932.0,26L1932.0,19.5L1934.0,19.5L1934.0,26ZM1946.0,26L1946.0,19.5L1952.0,19.5L1952.0,26ZM1968.0,26L1968.0,19.5L1970.0,19.5L1970.0,26ZM1982.0,26L1982.0,19.5L1984.0,19.5L1984.0,26ZM1990.0,26L1990.0,19.5L1994.0,19.5L1994.0,26ZM1996.0,26L1996.0,13.0L1998.0,13.0L1998.0,26Z"/><line class="sv-mf-base" x1="0" y1="26" x2="2000" y2="26"/></svg><canvas id="ruler-0" class="pileup-ruler"></canvas><canvas id="pileup-0"></canvas></div><div class="pileup-mf-marks" style="top:40px;height:26px"><span style="top:11.8px">10%</span><span style="top:0.0px">50%</span></div></div></div></div><script>(function(){var ref="AAGCCCAATAAACCACTCTGACTGGCCGAATAGGGATATAGGCAACGACATGTGCGGCGACCCTTGCGACAGTGACGCTTTCGCCGTTGCCTAAACCTATTTGAAGGAGTCTAGCAGCCGCAGTAAGGCACAATACCTCGTCCGTGTTACCAGACCAAACAAGACGTCCTCTTCAATGTTTAAATGACCCTCTCGTCATAAAACCTTTCTACTATGTGTTCCGCAAGAATCAACAACTACAATGGCGCGTCGTGAATAACGCGACGGCTGAGACGAACGGCGCGTGAATGAAGCGCTTAAACAGCTCAGGAGCCAGTCCCCTACGTCGCATATCCTGGCCACTGGAGGTGAAGCGAATGGTATCGATACGTAGGAGGTGTGCCTTCGTAGGCTGTTTCTCAGGACGCCCAACTATTCTTTCCAATCCTACATCTGTTTCTTGCGTCGTAGCGGGACCCTCCATTGTTACTTATTAGGTTCTCGTTATGTCTCATAATCTCAGTGCTGGTGTGATAAGCAAACCACCCTACTGGCACGAAGTTCACAGAAGTGAGATTATGTCTCGTTTGGCAGTCTTGATGCTCGGGGGACACTTCTTTAAGCTCGGTGTGGTGGGCACGACCCTGGACGCGCGACGAAGCTAAGTTTGCAGTAATTAACCGACATCTTTGTGAACCGACCCACATTTGACGGTACGCTACCGCAACGGTATGTGTTAATGGAACAGACTTGCTTATGTGGACGTTGTATAGGGATATTACGTTACGCGTTAACCGATACATACTGGTTTCTCTCCAGTGGAGGTCTTGGTTGCCTCTAGTTTCTACGATATACTCATGGTAGTGTAACGCATAATCGAAGAGGGTCCTCCCATCTCCTGTGATGCATGGTGTGCTTACTGGGATGAATGCGCCGCAAGTAGCAGGTCCCGGCGTGGATACCTGATAGATGGTGACTAGCATGTACAAGTAACCTTGTCTATTGAGCTTCGAGGATGCAT";var cons="........................................................................................................................T...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................";var rows=["......G............................................................................-.........C..........................T...............-G..................G................................................A..G.................A........................................................................-.......................................................................T....C............................................A................................................................-...................A............................................-..................................................A......A..............................................C...TA.................................................G..............................................................................................................G.....................................T.....G.................................................................................C.................................................G.", "...........................-.......................................T....-.G.T..................A........................T.............................................C...............................................C.....T.................................................................................................................G.....................................................................-......................................T.....C....................G........................G.......................C........-G................-................-..................................G............................................G..C...................................G.......................T..................-.........................T.............................C..G.........................................G........-....................T......................A.................-A..............A..........C.......T.....C...A.........................................................", ".....................................-............A.........T.........G...................................T.............T.......-.....................T....G...........................C.T..-...............................T......................C.........................................................................-..............................-.......................................................................T..................................................................-...T.....................................A.........C......................................C...A................................A........-.................................................................G.................-.......-...........T.A...................G....................................A.................................A....-.....................................A...-....-......G....................A.......................................T...........C....................A-...................G....", "...............G.....................................................A.............................-..................-.T.......................-...........T.........................................-.....-.....................................................................-....................T..........-..................................G.................................................A...................A.......................G......................C.......G......................................C....................................A............G..............................C...............A.A......T.........-..................................................A...................................-.........................C............................G.................G.....C..............C.......................G.......................-...............A...................G...........A............................A....................................................................A...", "...............A..............................................................G.........T....................G..-.......T.....T................................................................-..................................T.......G..........-.........................................C...............-.A....................................................................C........................................................................................................................................A.........................................A........G...A..............-......................A.........................................-..A............................C..........C....T....................C.......C...................A.............G.................T....................................T...................................T....C...............A.T...............................................................C.............-................C.................-...............", ".....................-.............................................................-T..................G.....C......A...T...........-...............C.............C.................................................C....................................G........T..........T.........................T.................................................C...........A.-.....T................................-.....-.......................-.....................A..........T.....T.A.........A.-.....................................................T.................................-........-....................-..................................G.....................C...............................-G.....T..................................C...........................................A..................................................-...........................C..........A...................................T.......-............-.........................................-....................................", "............-............................A.........................................-....................................T..........................................................................................................T...........................................-.........C...A....................A............................-...................................................................................................G........................................A..T..............T..............................T..................-................GC....................-..........................................T.....................................C......................................................A........T........................................................C.................C....................................................................................T...................C...........-......T....GAC.................................................................", ".........................-.........-.........................................................T.................-........T...............................-...................................................T.....................-....G.........C...................................................-...............................C...................T...................C............-............................-.............................................................A.............C..................................................C......................................................G................T.............T...........................T...........................................-...........................A....-........A...............-................G.........-...................C.........C..............C...............C.....T..-........................................................G.........C..C....G..................................................G.................T......C."];var flanks=[100,100];var refAA="LKESSSRSKAQYLVRVTRPNKTSSSMFK*PSRHKTFLLCVPQESTTTMARRE*RDG*DERRVNEALKQLRSQSPTSHILATGGEANGIDT*EVCLRRLFLRTPNYSFQSYICFLRRSGTLHCYLLGSRYVS*SQCWCDKQTTLLARSSQK*DYVSFGSLDARGTLL*ARCGGHDPGRATKLSLQ*LTDIFVNRPTFDGTLPQRYVLMEQTCLCGRCIGILRYALTDTYWFLSSGGLGCL*FLRYTHGSVTHNRRGSSHLL*CMVCL";var consAA="LKESSSRSKAQYLVRVTRPNKTSSSMFK*PSRHKTFLLCVPQESTTTMARRE*RDG*DERRVNEALKQLRSQSPTSHILATGGEANGIDT*EVCLRRLFLRTPNYSFQSYICFLRRSGTLHCYLLGSRYVS*SQCWCDKQTTLLARSSQK*DYVSFGSLDARGTLL*ARCGGHDPGRATKLSLQ*LTDIFVNRPTFDGTLPQRYVLMEQTCLCGRCIGILRYALTDTYWFLSSGGLGCL*FLRYTHGSVTHNRRGSSHLL*CMVCL";var flaggedCols=[6, 12, 15, 21, 25, 27, 35, 37, 41, 50, 60, 67, 69, 70, 72, 74, 76, 78, 83, 84, 88, 93, 95, 99, 103, 106, 109, 111, 112, 116, 118, 120, 126, 128, 132, 136, 137, 144, 148, 150, 152, 155, 156, 162, 166, 183, 185, 188, 191, 198, 204, 205, 208, 212, 214, 220, 226, 227, 231, 234, 241, 243, 245, 249, 258, 269, 271, 274, 281, 285, 287, 293, 295, 299, 303, 305, 306, 317, 325, 334, 335, 341, 345, 348, 357, 359, 365, 371, 374, 376, 378, 391, 398, 404, 407, 411, 420, 421, 428, 435, 443, 449, 450, 458, 461, 466, 467, 469, 470, 476, 479, 481, 483, 486, 487, 491, 494, 495, 505, 506, 511, 519, 525, 528, 529, 534, 535, 539, 542, 544, 546, 551, 553, 555, 561, 562, 563, 566, 569, 578, 581, 582, 583, 586, 589, 598, 599, 602, 604, 606, 609, 611, 615, 620, 621, 624, 626, 634, 643, 646, 648, 649, 656, 660, 661, 664, 672, 678, 682, 688, 689, 690, 692, 694, 695, 706, 708, 711, 715, 716, 719, 720, 723, 725, 728, 730, 734, 743, 750, 751, 757, 763, 767, 774, 775, 777, 781, 784, 785, 787, 797, 802, 803, 807, 812, 821, 822, 825, 826, 835, 838, 844, 847, 848, 850, 853, 856, 860, 864, 866, 868, 869, 871, 873, 879, 880, 886, 888, 897, 898, 900, 901, 904, 908, 913, 914, 917, 920, 921, 922, 924, 927, 932, 933, 934, 935, 938, 941, 942, 948, 949, 953, 963, 966, 973, 974, 975, 984, 991, 995, 996, 998];var parent="";var mmRuns=[[6, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [5, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [7, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [9, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [1, 0, 8], [2, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [4, 0, 8], [1, 3, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [4, 0, 8], [1, 2, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [1, 0, 8], [2, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 8, 8], [5, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [3, 0, 8], [2, 1, 8], [6, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [1, 2, 8], [5, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [16, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [5, 0, 8], [1, 2, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [5, 0, 8], [1, 2, 8], [5, 0, 8], [1, 3, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [10, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [1, 0, 8], [1, 2, 8], [3, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 2, 8], [10, 0, 8], [1, 1, 8], [7, 0, 8], [1, 1, 8], [8, 0, 8], [2, 1, 8], [5, 0, 8], [1, 1, 8], [3, 0, 8], [1, 2, 8], [2, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [5, 0, 8], [1, 2, 8], [5, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [12, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [5, 0, 8], [1, 2, 8], [2, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [8, 0, 8], [2, 1, 8], [6, 0, 8], [1, 1, 8], [6, 0, 8], [1, 2, 8], [7, 0, 8], [1, 1, 8], [5, 0, 8], [2, 1, 8], [7, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [4, 0, 8], [2, 1, 8], [1, 0, 8], [1, 2, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [2, 1, 8], [3, 0, 8], [1, 1, 8], [2, 0, 8], [2, 1, 8], [9, 0, 8], [2, 1, 8], [4, 0, 8], [1, 1, 8], [7, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [1, 2, 8], [4, 0, 8], [2, 1, 8], [3, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [4, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [1, 2, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [8, 0, 8], [1, 2, 8], [2, 0, 8], [3, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [8, 0, 8], [2, 1, 8], [2, 0, 8], [1, 2, 8], [1, 0, 8], [1, 2, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [4, 0, 8], [2, 1, 8], [2, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [7, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [1, 0, 8], [2, 1, 8], [6, 0, 8], [1, 2, 8], [3, 0, 8], [2, 1, 8], [2, 0, 8], [1, 1, 8], [7, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [1, 2, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [2, 1, 8], [10, 0, 8], [1, 1, 8], [1, 0, 8], [1, 2, 8], [2, 0, 8], [1, 1, 8], [3, 0, 8], [2, 1, 8], [2, 0, 8], [2, 1, 8], [2, 0, 8], [1, 1, 8], [1, 0, 8], [1, 2, 8], [2, 0, 8], [1, 2, 8], [1, 0, 8], [1, 2, 8], [3, 0, 8], [1, 2, 8], [8, 0, 8], [1, 1, 8], [6, 0, 8], [1, 2, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [6, 0, 8], [2, 1, 8], [1, 0, 8], [1, 1, 8], [3, 0, 8], [1, 2, 8], [2, 0, 8], [2, 1, 8], [1, 0, 8], [1, 2, 8], [9, 0, 8], [1, 1, 8], [4, 0, 8], [2, 1, 8], [3, 0, 8], [1, 1, 8], [4, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [1, 2, 8], [2, 0, 8], [1, 1, 8], [1, 3, 8], [8, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [5, 0, 8], [1, 1, 8], [2, 0, 8], [2, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [2, 0, 8], [1, 1, 8], [3, 0, 8], [1, 1, 8], [3, 0, 8], [1, 2, 8], [1, 0, 8], [1, 2, 8], [1, 0, 8], [2, 1, 8], [1, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [5, 0, 8], [2, 1, 8], [5, 0, 8], [1, 1, 8], [1, 0, 8], [1, 1, 8], [8, 0, 8], [1, 1, 8], [1, 2, 8], [1, 0, 8], [2, 1, 8], [2, 0, 8], [1, 1, 8], [3, 0, 8], [1, 2, 8], [4, 0, 8], [2, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [3, 1, 8], [1, 0, 8], [1, 1, 8], [2, 0, 8], [1, 2, 8], [4, 0, 8], [1, 2, 8], [3, 1, 8], [2, 0, 8], [1, 1, 8], [2, 0, 8], [2, 1, 8], [5, 0, 8], [2, 1, 8], [3, 0, 8], [1, 1, 8], [9, 0, 8], [1, 1, 8], [2, 0, 8], [1, 1, 8], [6, 0, 8], [3, 1, 8], [8, 0, 8], [1, 1, 8], [6, 0, 8], [1, 1, 8], [3, 0, 8], [2, 1, 8], [1, 0, 8], [1, 2, 8], [1, 0, 8]];var parentAA=null;drawPileup("pileup-0","ruler-0","labels-0",ref,cons,rows,flanks,"scroll-0","wrap-0",refAA,consAA,flaggedCols,2,40,31,parent,mmRuns,parentAA);})();</script>
+<script>
+/* After the groups: every pileup exists by now, which is what the mirror needs
+   to find them all. */
+syncPileupScrolls();
+bindCopyButtons();
+bindViewToggle();
+/* Two frames: one for the layout the draws above queued, one for the paint. */
+requestAnimationFrame(function () { requestAnimationFrame(revealPage); });
+</script>
+<script id="cv-theme-sync">
+(function () {
+  try {
+    var stored = localStorage.getItem('seqviewer-theme');
+    if (stored === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
