@@ -8,9 +8,9 @@ every time, and it is not committed: rerun this, then
 
     seqview lengths docs/examples/sample_reads.fastq --bins 14 \\
         > docs/examples/lengths.txt
-    seqview quality docs/examples/sample_reads.fastq --bins 14 \\
+    seqview qualities docs/examples/sample_reads.fastq --bins 14 \\
         > docs/examples/quality.txt
-    seqview quality docs/examples/sample_reads.fastq --bins 14 --by read \\
+    seqview qualities docs/examples/sample_reads.fastq --bins 14 --by read \\
         > docs/examples/quality_by_read.txt
 
 The base qualities start high and fall along the read, with a read-to-read

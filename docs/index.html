@@ -217,7 +217,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 <nav class="ladder" aria-label="Sections">
   <a href="#install">install</a>
   <a href="#lengths">lengths</a>
-  <a href="#quality">quality</a>
+  <a href="#qualities">qualities</a>
   <a href="#pileup">pileup</a>
 </nav>
 
@@ -237,9 +237,9 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
       <pre class="out">usage: seqview &lt;command&gt; [options]
 
 commands:
-  pileup   align reads to a reference and write a pileup page
-  lengths  plot the read-length distribution in the terminal
-  quality  plot the base-quality distribution in the terminal
+  pileup     align reads to a reference and write a pileup page
+  lengths    plot the read-length distribution in the terminal
+  qualities  plot the base-quality distribution in the terminal
 
 seqview &lt;command&gt; --help lists that command's options.</pre>
     </div>
@@ -329,9 +329,9 @@ full range.</pre>
   </div>
 </section>
 
-<section class="tool" id="quality">
+<section class="tool" id="qualities">
   <div class="label">
-    <span class="name">quality</span>
+    <span class="name">qualities</span>
   </div>
   <div class="body">
     <p>This command plots how many bases the sequencer scored at each Phred
@@ -342,7 +342,7 @@ full range.</pre>
     pass.</p>
 
     <div class="run">
-      <pre class="cmd">$ <b>seqview quality</b> sample_reads.fastq --bins 14</pre>
+      <pre class="cmd">$ <b>seqview qualities</b> sample_reads.fastq --bins 14</pre>
       <pre class="out">sample_reads.fastq  ·  1 file
 
      Q                                                                     bases
@@ -379,7 +379,7 @@ min Q2 · median Q34 · mean Q33.0 · max Q41
     an error rate. <code>--mean phred</code> averages the scores instead.</p>
 
     <div class="run">
-      <pre class="cmd">$ <b>seqview quality</b> sample_reads.fastq --bins 14 --by read</pre>
+      <pre class="cmd">$ <b>seqview qualities</b> sample_reads.fastq --bins 14 --by read</pre>
       <pre class="out">sample_reads.fastq  ·  1 file
 
      Q                                                                     reads
@@ -414,7 +414,7 @@ min Q5 · median Q29 · mean Q29.0 · max Q40
     usually means the wrong offset.</p>
 
     <div class="ref">
-      <h3>seqview quality [options] reads</h3>
+      <h3>seqview qualities [options] reads</h3>
       <dl class="flags">
       <dt><code>reads</code></dt>
       <dd>a directory of FASTQs, or a single FASTQ</dd>

@@ -1130,7 +1130,7 @@ def write_png(counts, args, label, dim):
     return 0
 
 
-def build_quality_parser(prog="seqviewer-quality"):
+def build_quality_parser(prog="seqviewer-qualities"):
     """The quality parser, apart from the command, so the docs can read it."""
     parser = argparse.ArgumentParser(
         prog=prog,
@@ -1183,7 +1183,7 @@ def build_quality_parser(prog="seqviewer-quality"):
     return parser
 
 
-def quality_main(argv=None, prog="seqviewer-quality"):
+def quality_main(argv=None, prog="seqviewer-qualities"):
     """Print a base-quality histogram for a directory of FASTQs, or one file."""
     args = build_quality_parser(prog).parse_args(argv)
 
@@ -1237,14 +1237,14 @@ def seqview_main(argv=None):
     """Dispatch ``seqview <command>`` to that command's own parser.
 
     Each command is installed under its own name as well --
-    ``seqviewer-pileup``, ``seqviewer-lengths`` and ``seqviewer-quality`` -- and
+    ``seqviewer-pileup``, ``seqviewer-lengths`` and ``seqviewer-qualities`` -- and
     takes the same arguments either way.
     """
     commands = {
         "pileup": (main, "align reads to a reference and write a pileup page"),
         "lengths": (lengths_main,
                     "plot the read-length distribution in the terminal"),
-        "quality": (quality_main,
+        "qualities": (quality_main,
                     "plot the base-quality distribution in the terminal"),
     }
     argv = list(sys.argv[1:] if argv is None else argv)

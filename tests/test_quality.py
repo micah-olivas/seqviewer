@@ -373,15 +373,15 @@ def test_a_missing_path_is_an_error(tmp_path, capsys):
     assert "no FASTQ files" in capsys.readouterr().err
 
 
-def test_seqview_dispatches_to_quality(tmp_path, capsys):
+def test_seqview_dispatches_to_qualities(tmp_path, capsys):
     path = _fastq(tmp_path / "a.fastq", ["IIII"])
-    assert seqview_main(["quality", str(path), "--no-progress"]) == 0
+    assert seqview_main(["qualities", str(path), "--no-progress"]) == 0
     assert "4 bases" in capsys.readouterr().out
 
 
-def test_seqview_lists_quality_among_its_commands(capsys):
+def test_seqview_lists_qualities_among_its_commands(capsys):
     seqview_main([])
-    assert "quality" in capsys.readouterr().err
+    assert "qualities" in capsys.readouterr().err
 
 
 # --- Scoring each read by its mean ----------------------------------------

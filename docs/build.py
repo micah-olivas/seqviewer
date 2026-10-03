@@ -316,7 +316,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 <nav class="ladder" aria-label="Sections">
   <a href="#install">install</a>
   <a href="#lengths">lengths</a>
-  <a href="#quality">quality</a>
+  <a href="#qualities">qualities</a>
   <a href="#pileup">pileup</a>
 </nav>
 
@@ -372,9 +372,9 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   </div>
 </section>
 
-<section class="tool" id="quality">
+<section class="tool" id="qualities">
   <div class="label">
-    <span class="name">quality</span>
+    <span class="name">qualities</span>
   </div>
   <div class="body">
     <p>This command plots how many bases the sequencer scored at each Phred
@@ -385,7 +385,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     pass.</p>
 
     <div class="run">
-      <pre class="cmd">$ <b>seqview quality</b> sample_reads.fastq --bins 14</pre>
+      <pre class="cmd">$ <b>seqview qualities</b> sample_reads.fastq --bins 14</pre>
       <pre class="out">__QUALITY__</pre>
     </div>
 
@@ -402,7 +402,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     an error rate. <code>--mean phred</code> averages the scores instead.</p>
 
     <div class="run">
-      <pre class="cmd">$ <b>seqview quality</b> sample_reads.fastq --bins 14 --by read</pre>
+      <pre class="cmd">$ <b>seqview qualities</b> sample_reads.fastq --bins 14 --by read</pre>
       <pre class="out">__QUALITY_BY_READ__</pre>
     </div>
 
@@ -418,7 +418,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     usually means the wrong offset.</p>
 
     <div class="ref">
-      <h3>seqview quality [options] reads</h3>
+      <h3>seqview qualities [options] reads</h3>
       __QUALITY_FLAGS__
     </div>
   </div>
@@ -636,7 +636,7 @@ def build(today=None) -> str:
             .replace("__LENGTHS_FLAGS__", flags(build_lengths_parser(
                 "seqview lengths")))
             .replace("__QUALITY_FLAGS__", flags(build_quality_parser(
-                "seqview quality")))
+                "seqview qualities")))
             .replace("__PILEUP_FLAGS__", flags(build_parser("seqview pileup")))
             .replace("__STAMP__", escape(stamp)))
 
