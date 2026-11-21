@@ -124,7 +124,7 @@ def test_a_status_string_is_escaped():
 
 def test_a_clean_group_says_so_and_draws_no_lollipops():
     html = _render("." * len(REF), "." * len(REF))
-    assert "No position disagrees" in html
+    assert "No stretch where 50% of reads or more disagree" in html
     assert "No variants called" in html
     assert 'class="sv-head' not in html
 
@@ -220,8 +220,8 @@ def test_a_reference_that_disagrees_throughout_is_one_stretch():
     html = render_summary(
         SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
     )
-    assert "1 position to check" in html
-    assert "1&ndash;400" in html or "1\u2013400" in html
+    assert "1 stretch where 50% of reads or more disagree" in html
+    assert "position 1\u2013400" in html
     assert "400 bp" in html
     assert html.count('sv-zoom"') == 1
 
@@ -230,16 +230,16 @@ def test_more_stretches_than_windows_says_how_many_are_shown():
     """Scattered positions stay separate stretches, and the line says how many
     of them the windows below it cover.
     """
-    ref = "A" * 400
-    # A disagreeing position every twentieth base, so they do not join.
-    spec = "".join("T" if i % 20 == 0 else "." for i in range(400))
+    ref = "A" * 1200
+    # A disagreeing position every sixtieth base, farther apart than windows join.
+    spec = "".join("T" if i % 60 == 0 else "." for i in range(1200))
     view = PileupView(title="t", groups=[
         PileupGroup("g", ref, [_row(ref, spec) for _ in range(2)], n_reads=2)
     ])
     html = render_summary(
         SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
     )
-    assert "20 positions to check" in html
+    assert "20 stretches where 50% of reads or more disagree" in html
     assert f"{MAX_INSPECTORS} shown" in html
     assert html.count('sv-zoom"') <= MAX_INSPECTORS
 
@@ -323,3 +323,59 @@ def test_the_pileup_demo_is_unchanged_by_this_work():
     from seqviewer.render import render
 
     assert render(build_view(seed=1)) == render(build_view(seed=1))
+
+
+def test_nearby_stretches_are_drawn_in_one_window():
+    """Changes a few bases apart are one finding: one window, not one per base."""
+    ref = "A" * 400
+    spec = "".join("T" if i in (100, 110, 125, 140) else "." for i in range(400))
+    view = PileupView(title="t", groups=[
+        PileupGroup("g", ref, [_row(ref, spec) for _ in range(2)], n_reads=2)
+    ])
+    html = render_summary(
+        SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
+    )
+    assert "1 stretch where" in html
+    assert html.count('sv-zoom"') == 1
+    assert "position 101\u2013141" in html
+
+
+def test_a_minority_change_is_shown_but_does_not_set_the_headline():
+    """A deletion in a third of the reads is a minority signal, folded away, and
+    the group's chip says the consensus is clean."""
+    ref = "ACGT" * 50
+    rows = [_row(ref, "." * 200) for _ in range(4)]
+    rows += [_row(ref, "." * 60 + "-" + "." * 139) for _ in range(2)]
+    view = PileupView(title="t", groups=[PileupGroup("g", ref, rows, n_reads=6)],
+                      flanks=(0, 0), translate=True)
+    summary = SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
+    assert summary.groups[0].verdict == "frameshift"
+    assert summary.groups[0].verdict_at(0.5) == "clean"
+    html = render_summary(summary)
+    assert "No consensus changes" in html and "Frameshift" not in html
+    assert "1 minority signal: 10%\u201350% of reads" in html
+    assert '<details class="sv-calls">' in html   # minority folded, not open
+
+
+def test_positions_inside_the_insert_are_counted_on_the_insert():
+    """With flanks, a change is placed on the insert, as its protein position is."""
+    ref = "G" * 30 + "ATG" + "AAA" * 20 + "G" * 30
+    spec = "." * 40 + "T" + "." * (len(ref) - 41)
+    view = PileupView(title="t", groups=[
+        PileupGroup("g", ref, [_row(ref, spec) for _ in range(3)], n_reads=3)
+    ], flanks=(30, 30), translate=True)
+    html = render_summary(
+        SummaryView.from_view(view, min_depth=1, min_count=2, min_fraction=0.25)
+    )
+    assert "insert 11" in html and ">insert<" in html
+    assert "intergenic" not in html
+
+
+def test_a_callers_note_is_drawn_under_the_heading():
+    ref = "A" * 100
+    view = PileupView(title="t", groups=[
+        PileupGroup("g", ref, [_row(ref, "." * 100)], n_reads=1)
+    ])
+    html = render_summary(SummaryView.from_view(
+        view, min_depth=1, note="Expected a <b> \u00b7 holds a"))
+    assert '<div class="sv-note">Expected a &lt;b&gt; \u00b7 holds a</div>' in html
