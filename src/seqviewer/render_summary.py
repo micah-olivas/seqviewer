@@ -24,6 +24,7 @@ down, which is what that parameter is for.
 from __future__ import annotations
 
 import math
+from collections import Counter
 
 import html as _html
 from dataclasses import replace
@@ -32,7 +33,7 @@ from typing import List, Optional, Sequence, Tuple
 from .annotate import (MISMATCH_TRACK_ALERT, MISMATCH_TRACK_MARKS, TrackPlan,
                        plan_track, track_style, track_svg)
 from .plate import Well, plate_svg
-from .summary import GroupSummary, SummaryView, Variant
+from .summary import SEVERITY, GroupSummary, SummaryView, Variant
 from .zoom import window_bounds, window_css, window_svg
 
 # The pileup owns the package's colour table.  Imported rather than copied so
@@ -110,6 +111,15 @@ RIBBON_GAP = 3
 MAX_INSPECTORS = 6
 INSPECTOR_COLUMNS = 96
 INSPECTOR_READS = 16
+
+#: Flagged stretches closer together than this are drawn in one window.  Two
+#: windows a few bases apart show the same reads over the same bases twice, and
+#: a block of differences reads as one finding, not as one per position.
+CLUSTER_GAP = INSPECTOR_COLUMNS // 2
+
+#: The widest a window grows to hold a joined stretch before it is centred on
+#: it and cut.  Wider than this the bases are too small to read.
+MAX_INSPECTOR_COLUMNS = 2 * INSPECTOR_COLUMNS
 
 #: Consequence -> the tier its glyph and chip are drawn in.
 _TIER_OF = {
@@ -535,33 +545,96 @@ def flagged_runs(group: GroupSummary,
     return runs
 
 
-def _run_label(group: GroupSummary, run: Tuple[int, int, float]) -> str:
-    """Name one flagged stretch: where it is, how wide, and how bad."""
+def clustered_runs(runs: Sequence[Tuple[int, int, float]],
+                   gap: int = CLUSTER_GAP) -> List[Tuple[int, int, float]]:
+    """Join flagged stretches lying within *gap* bases of one another.
+
+    Each result is ``(start, end, peak)`` like :func:`flagged_runs`, with the
+    peak the highest of the stretches joined.
+    """
+    out: List[Tuple[int, int, float]] = []
+    for start, end, peak in sorted(runs):
+        if out and start - out[-1][1] <= gap:
+            first, last, top = out[-1]
+            out[-1] = (first, max(last, end), max(top, peak))
+        else:
+            out.append((start, end, peak))
+    return out
+
+
+def _place(view: SummaryView, start: int, end: int) -> str:
+    """What the stretch ``[start, end]`` lies in: a feature, else part of the read.
+
+    With a focus region the reference is flank, insert, flank, and that is the
+    answer a reader needs; "intergenic" says only that no feature was drawn.
+    """
+    covering = [f.label or f.type for f in view.features
+                if f.start <= end and f.end > start]
+    if covering:
+        return ", ".join(dict.fromkeys(covering))
+    if view.focus is None:
+        return ""
+    first, stop = view.focus
+    if end < first:
+        return "5\u2032 flank"
+    if start >= stop:
+        return "3\u2032 flank"
+    if start >= first and end < stop:
+        return "insert"
+    return "insert boundary"
+
+
+def _where(view: SummaryView, start: int, end: int) -> str:
+    """The stretch's position, on the insert when it lies wholly inside one.
+
+    Insert coordinates are the ones a protein position is counted in, so a
+    change reads the same in its position and in its effect.  Anything outside
+    the insert keeps the reference's own coordinates, and says so.
+    """
+    if view.focus is not None:
+        first, stop = view.focus
+        if first <= start and end < stop:
+            a, b = start - first + 1, end - first + 1
+            return f"insert {a:,}" if a == b else f"insert {a:,}\u2013{b:,}"
+    a, b = start + 1, end + 1
+    return f"position {a:,}" if a == b else f"position {a:,}\u2013{b:,}"
+
+
+def _run_label(group: GroupSummary, view: SummaryView,
+               run: Tuple[int, int, float]) -> str:
+    """Name one stretch: where it is, how wide, how many reads, and what changed."""
     start, end, peak = run
     span = end - start + 1
-    where = f"{start + 1:,}" if span == 1 else f"{start + 1:,}\u2013{end + 1:,}"
     width = "" if span == 1 else f" \u00b7 {span:,} bp"
-    called = any(start <= v.pos <= end for v in group.variants)
-    tail = " \u00b7 variant called" if called else ""
-    return f"{where}{width} \u00b7 {peak:.0%} of reads{tail}"
+    calls = sorted((v for v in group.variants if start <= v.pos <= end),
+                   key=lambda v: (-v.fraction, v.pos))
+    tail = ""
+    if len(calls) == 1 and calls[0].effect:
+        tail = f" \u00b7 {calls[0].effect}"
+    elif calls:
+        # Several calls are counted by consequence, worst first; the window
+        # below names each one at its base.
+        kinds = Counter(v.consequence for v in calls if v.consequence)
+        words = [f"{kinds[k]} {k.replace('_', '-')}" for k in SEVERITY if kinds[k]]
+        tail = f" \u00b7 {len(calls)} called"
+        if words:
+            tail += ": " + ", ".join(words)
+    return f"{_where(view, start, end)}{width} \u00b7 up to {peak:.0%} of reads{tail}"
 
 
-def _call_count(group: GroupSummary, runs: Sequence) -> str:
-    """The line on the collapsed detail, and the only statement of the count.
-
-    A long list is not drawn in full, since each window costs a hundred
-    columns of reads, so the line says how many stretches are below it.
-    """
-    if not runs:
-        return f"No position disagrees at {MISMATCH_ALERT:.0%} or more"
-    n = len(runs)
-    called = sum(1 for v in group.variants)
-    plural = "" if n == 1 else "s"
-    line = f"{n} position{plural} to check"
+def _count_line(clusters: Sequence, kind: str, view: SummaryView) -> str:
+    """The line a list of windows is folded under, and its only count."""
+    n = len(clusters)
+    share = f"{view.consensus_fraction:.0%}"
+    if kind == "consensus":
+        what = (f"stretch{'' if n == 1 else 'es'} where {share} of reads or "
+                "more disagree with the reference")
+    else:
+        what = (f"minority signal{'' if n == 1 else 's'}: "
+                f"{MISMATCH_ALERT:.0%}\u2013{share} of reads")
+    line = f"{n} {what}"
     if n > MAX_INSPECTORS:
         line += f", {MAX_INSPECTORS} shown"
-    if called:
-        line += f" \u00b7 {called} called variant{'' if called == 1 else 's'}"
     return line
 
 
@@ -569,14 +642,22 @@ def _call_count(group: GroupSummary, runs: Sequence) -> str:
 # The prose around each band
 # --------------------------------------------------------------------------
 
-def _chip(group: GroupSummary) -> str:
-    verdict = group.verdict
+def _chip(group: GroupSummary, view: SummaryView) -> str:
+    """The group's headline, stated at the consensus level.
+
+    A change in a minority of reads is shown on the page but does not set the
+    headline: a well whose reads mostly agree with the reference is not a
+    frameshift because a quarter of them dropped a base in a homopolymer.
+    """
+    verdict = group.verdict_at(view.consensus_fraction)
     tier = "ok" if verdict in ("clean", "silent") else _TIER_OF.get(
         verdict, "neutral"
     )
     if verdict in ("variant", "noncoding"):
         tier = "neutral"
     text = _VERDICT_TEXT.get(verdict, verdict)
+    if verdict == "clean" and group.variants:
+        text = "No consensus changes"
     return f'<span class="sv-chip sv-chip-{tier}">{_e(text)}</span>'
 
 
@@ -644,9 +725,12 @@ def _inspectors(group: GroupSummary, view: SummaryView, index: int,
     blocks = []
     for run in ranked[:MAX_INSPECTORS]:
         middle = (run[0] + run[1]) // 2
-        start, end = window_bounds(middle, len(origin.ref_seq),
-                                   INSPECTOR_COLUMNS)
-        label = _run_label(group, run)
+        # Wide enough for the whole stretch and a margin either side, so a
+        # joined block is seen whole, up to the width bases stay legible at.
+        columns = min(max(INSPECTOR_COLUMNS, run[1] - run[0] + 1 + 16),
+                      MAX_INSPECTOR_COLUMNS)
+        start, end = window_bounds(middle, len(origin.ref_seq), columns)
+        label = _run_label(group, view, run)
         window = window_svg(
             origin.ref_seq, origin.rows, start, end,
             frame=_reading_frame(view, start, end),
@@ -665,9 +749,7 @@ def _inspectors(group: GroupSummary, view: SummaryView, index: int,
                 f"{window.rows_shown + window.rows_hidden} reads shown, those "
                 f"disagreeing here first.</p>"
             )
-        covering = [f.label or f.type for f in view.features
-                    if f.start <= middle < f.end]
-        place = ", ".join(dict.fromkeys(covering)) if covering else "intergenic"
+        place = _place(view, run[0], run[1])
         caption = (
             f'<span class="sv-zoom-at">{_e(label)}</span>'
             f'<span class="sv-zoom-in">{_e(place)}</span>'
@@ -763,6 +845,7 @@ body {{
 .sv-wrap {{ max-width: 760px; margin: 0 auto; }}
 h1 {{ font-size: 1.3rem; margin: 0 0 0.2rem; letter-spacing: -0.01em; }}
 .sv-sub {{ color: var(--muted); font-size: 0.85rem; margin-bottom: 1.1rem; }}
+.sv-note {{ font-size: 0.9rem; font-weight: 500; margin-bottom: 0.9rem; }}
 .sv-panel {{
     background: var(--card-bg);
     border: 1px solid var(--panel-line);
@@ -1244,7 +1327,9 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
 
     # No heading: the group's own line carries its name, its reads and its
     # depth, and the document title names the reference for a bookmark or a tab.
-    head = f"{_banner(pileup_href)}{_plate_row(view.well)}{highlighted}{dropped}"
+    note = f'<div class="sv-note">{_e(view.note)}</div>' if view.note else ""
+    head = (f"{_banner(pileup_href)}{_plate_row(view.well)}{note}"
+            f"{highlighted}{dropped}")
 
     # The reference is drawn once and placed between each group's disagreement
     # track and its reads, so the coordinate both are read against sits between
@@ -1263,12 +1348,35 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
             f'<span class="sv-facts">{_e(group.status)}</span>'
             if group.status else ""
         )
-        runs = flagged_runs(group)
+        clusters = clustered_runs(flagged_runs(group))
+        major = [c for c in clusters if c[2] >= view.consensus_fraction]
+        minor = [c for c in clusters if c[2] < view.consensus_fraction]
+        if major:
+            consensus = (
+                f'<details class="sv-calls" open>'
+                f'<summary>{_count_line(major, "consensus", view)}</summary>'
+                f'<div class="sv-calls-body">'
+                f"{_inspectors(group, view, index, major)}</div></details>"
+            )
+        else:
+            consensus = (
+                f'<p class="sv-none">No stretch where '
+                f"{view.consensus_fraction:.0%} of reads or more disagree with "
+                f"the reference.</p>"
+            )
+        minority = ""
+        if minor:
+            minority = (
+                f'<details class="sv-calls">'
+                f'<summary>{_count_line(minor, "minority", view)}</summary>'
+                f'<div class="sv-calls-body">'
+                f"{_inspectors(group, view, index, minor)}</div></details>"
+            )
         sections.append(
             '<div class="sv-group">'
             f'<div class="sv-group-head"><span class="sv-name">'
             f"{_e(group.name)}{star}</span>{_well_chip(view.well)}"
-            f"{_chip(group)}{status}</div>"
+            f"{_chip(group, view)}{status}</div>"
             f'<div class="sv-facts">{_facts(group, view)}</div>'
             f'<div class="sv-stack">'
             f"{_upper_svg(group, view, cell_w)}"
@@ -1277,11 +1385,7 @@ def render_summary(view: SummaryView, max_lanes: int = 2,
             f'<div class="sv-ref-body">{reference_svg}</div></div>'
             f"{_lower_svg(group, view, cell_w, ceiling)}"
             f"</div>"
-            f'<details class="sv-calls">'
-            f'<summary>{_call_count(group, runs)}</summary>'
-            f'<div class="sv-calls-body">'
-            f"{_inspectors(group, view, index, runs)}</div>"
-            f"</details>"
+            f"{consensus}{minority}"
             "</div>"
         )
 

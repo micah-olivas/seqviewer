@@ -44,6 +44,7 @@ from .plate import Well
 from .theme import Theme
 
 __all__ = [
+    "DEFAULT_CONSENSUS_FRACTION",
     "DEFAULT_FLAG_THRESHOLD",
     "DEFAULT_MIN_COUNT",
     "DEFAULT_MIN_DEPTH",
@@ -77,6 +78,13 @@ DEFAULT_MIN_DEPTH = 3
 #: is worth a reader's eye.  Lower than the calling threshold on purpose: marking
 #: a column and asserting a variant are different claims.
 DEFAULT_FLAG_THRESHOLD = 0.10
+
+#: Share of covering reads a variant needs to count as the sample's sequence
+#: rather than a minority within it.  A page's headline is stated at this level:
+#: a frameshift in a quarter of the reads is worth showing, but it is not what
+#: the well holds, and at the depths these pages are made for it is as often
+#: basecalling error in a homopolymer as a second template.
+DEFAULT_CONSENSUS_FRACTION = 0.5
 
 #: Consequences, worst first.  A group's verdict is the worst one it carries,
 #: and the renderer styles on these rather than on any free text.
@@ -169,9 +177,18 @@ class GroupSummary:
         called but no reading frame was known to classify it, which is the
         honest answer for a construct with no annotated insert.
         """
-        if not self.variants:
+        return self.verdict_at(0.0)
+
+    def verdict_at(self, threshold: float) -> str:
+        """:attr:`verdict` over the variants carried by *threshold* of reads or more.
+
+        At :data:`DEFAULT_CONSENSUS_FRACTION` this is what the sample holds, as
+        opposed to what some of its reads say.
+        """
+        carried = [v for v in self.variants if v.fraction >= threshold]
+        if not carried:
             return "clean"
-        ranked = [v.consequence for v in self.variants if v.consequence]
+        ranked = [v.consequence for v in carried if v.consequence]
         if not ranked:
             return "variant"
         return min(ranked, key=SEVERITY.index)
@@ -524,6 +541,13 @@ class SummaryView:
     #: plate map.  None when the run was not from a plate, or nobody said.
     well: Optional[Well] = None
     min_depth: int = DEFAULT_MIN_DEPTH
+    #: Share of reads a variant needs to set the page's headline; see
+    #: :data:`DEFAULT_CONSENSUS_FRACTION`.  Variants below it are still called
+    #: and shown, as minority signals.
+    consensus_fraction: float = DEFAULT_CONSENSUS_FRACTION
+    #: One line of the caller's own context, drawn under the heading: what the
+    #: sample was expected to be and what a pipeline concluded, say.  Plain text.
+    note: str = ""
 
     @property
     def ref_len(self) -> int:
@@ -538,6 +562,8 @@ class SummaryView:
         min_count: int = DEFAULT_MIN_COUNT,
         min_depth: int = DEFAULT_MIN_DEPTH,
         insertions: Optional[Mapping[str, Mapping[int, Mapping[str, int]]]] = None,
+        consensus_fraction: float = DEFAULT_CONSENSUS_FRACTION,
+        note: str = "",
     ) -> "SummaryView":
         """Reduce an existing :class:`~seqviewer.pileup.PileupView`.
 
@@ -597,4 +623,6 @@ class SummaryView:
             min_count=min_count,
             min_depth=min_depth,
             well=view.well,
+            consensus_fraction=consensus_fraction,
+            note=note,
         )

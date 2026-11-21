@@ -231,8 +231,8 @@ def test_summary_writes_a_second_page_reporting_the_planted_variant(tmp_path):
 
     html = summary.read_text()
     assert html.startswith("<!DOCTYPE html>")
-    assert "positions to check" in html
-    assert "called variant" in html                  # and what was called
+    assert "or more disagree with the reference" in html
+    assert " called" in html                  # and what was called
     # The grid cannot carry an insertion, so none is reported however many
     # reads carry one.  This is the documented limit, pinned.
     assert "Insertion" not in html
